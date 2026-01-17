@@ -26,7 +26,9 @@ def main():
 
     # 1) 加载模型（新 SegDA3 内部自己 from_pretrained + 冻结 DA3）
     print("Loading model...")
-    model = SegDA3(num_classes=2, seg_head_ckpt_path=ckpt_path).to(device)
+    model = SegDA3(num_classes=2,
+                    seg_head_ckpt_path=ckpt_path
+                    ).to(device)
 
     # 2) 推理（主体走 API inference：depth/processed_images/aux 都是 API 原样）
     print("Running inference...")

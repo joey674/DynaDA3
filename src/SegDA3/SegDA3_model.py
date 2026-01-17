@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from depth_anything_3.api import DepthAnything3
-
+from depth_anything_3.utils.logger import logger
 
 # ==========================================
 # 1) DPT 分割头
@@ -87,7 +87,7 @@ class SegDA3(nn.Module):
             num_classes=num_classes,
             readout_indices=range(len(self.export_feat_layers)),
         )
-        
+
         if seg_head_ckpt_path:
             print(f"Loading trained head from {seg_head_ckpt_path}...")
             # 加载权重到内存
@@ -160,43 +160,56 @@ class SegDA3(nn.Module):
 
         return output
 
-    def forward(self, images):
+    def forward(self, image):
         """
+        在训练过程(只训练特定任务头)中使用forward; 
+        在推理过程(需要所有其他头的输出)使用inferrence;
+        由于只训练 seg_head,所以这里forward只需要返回seg_head的logits
         Args:
-            images: [B, 3, H, W] Tensor, normalized (ImageNet mean/std)
+            images: [B, N, 3, H, W] Tensor, normalized (ImageNet mean/std)
         Returns:
             logits: [B, num_classes, H, W]
+                num_classes: motion segmentation classes = 2 (moving / static)
+
         """
-        # 1. 维度适配：DA3 底层期望 [B, N, 3, H, W]，通常训练时 N=1 (单视角)
-        if images.ndim == 4:
-            images_in = images.unsqueeze(1)  # [B, 1, 3, H, W]
-        else:
-            images_in = images
+        # 输入图片的tensor维度检查 
+        # [B, N, 3, H, W]
+        if image.ndim != 5: 
+            logger.error(f"Input image must be 5-D Tensor [B, N, 3, H, W], got {image.shape}")
+            assert False
 
-        H, W = images.shape[-2], images.shape[-1]
+        B, N, _, H, W = image.shape
 
-        # 2. 骨干提取特征 (冻结状态，不计算梯度以节省显存)
+        # 骨干提取特征(冻结状态，不计算梯度以节省显存) 
+        # [B, N, h=H/14, w=W/14, Feat_Dim=1024]
+        # 把 patch 的信息融合到Feat_Dim里
         with torch.no_grad():
-            # 直接调用底层 .model，绕过 api.py 的 @inference_mode 装饰器
-            # 这样输出是纯 Tensor，且不会破坏外部可能的梯度上下文
+            # 为什么要用 with torch.no_grad()：
+            # 显存优化：DA3 Large 参数量巨大，如果不加这个，PyTorch 会记录每一层的激活值用于求导，普通显卡会立刻 OOM（显存溢出）。
+            # 职责分离：我们相信预训练好的 DA3 提取特征的能力，所以“冻结”它，只让权重在 seg_head 里流动。
             out = self.da3.model(
-                images_in, 
+                image, 
                 export_feat_layers=self.export_feat_layers
             )
 
-        # 3. 特征处理：从 [B, 1, h, w, C] -> [B, C, h, w]
-        feats = []
+        # 特征处理
+        feats = [] 
         for layer in self.export_feat_layers:
-            # 获取对应层特征
-            feat = out['aux'][f"feat_layer_{layer}"]  # Shape: [B, 1, h, w, C]
+            feat = out['aux'][f"feat_layer_{layer}"]  # 原始 Shape: [B, N, h, w, Feat_Dim]
             
-            # 去掉 View 维度并调整通道顺序
-            feat = feat.squeeze(1)                     # [B, h, w, C]
-            feat = feat.permute(0, 3, 1, 2)            # [B, C, h, w]
+            # 不管 N 是多少，直接把 B 和 N 合并; 因为分割头（DPTHead）是基于 2D 卷积的，它不认识序列维度 N
+            _, _, h, w, Feat_Dim = feat.shape
+            
+            # [B, N, h, w, Feat_Dim] -> [B*N, h, w, Feat_Dim]
+            feat = feat.view(B * N, h, w, Feat_Dim)
+
+            # [B*N, h, w, Feat_Dim] -> [B*N, Feat_Dim, h, w] (Channel-First 适配卷积层)
+            feat = feat.permute(0, 3, 1, 2).contiguous()
             feats.append(feat)
 
-        # 4. 运行分割头 (只有这里计算梯度)
-        logits = self.seg_head(feats, H, W)
+        # 4. 运行分割头
+        # 此时 feats 里的每个 Tensor 都是 [Batch_total, Feat_Dim, h, w]
+        logits = self.seg_head(feats, H, W) # 返回 [B*N, 2, H, W]
         
         return logits
         

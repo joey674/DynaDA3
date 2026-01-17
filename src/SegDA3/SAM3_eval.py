@@ -15,8 +15,8 @@ from tqdm import tqdm
 # ==============================================================================
 # static settings
 # ==============================================================================
-# video_path = "/home/zhouyi/repo/dataset/2077/scene1" 
-video_path = "/home/zhouyi/repo/model_sam3/assets/videos/0001"
+video_path = "/home/zhouyi/repo/dataset/2077/scene1" 
+# video_path = "/home/zhouyi/repo/model_sam3/assets/videos/dancer"
 output_dir = "/home/zhouyi/repo/model_DepthAnythingV3/outputs"
 text_prompt = "person" 
 
