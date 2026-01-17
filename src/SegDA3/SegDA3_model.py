@@ -67,6 +67,7 @@ class SegDA3(nn.Module):
         embed_dim: int = 256,
         in_channels: int = 1024,
         export_feat_layers=(3, 7, 11, 15, 19, 23),
+        seg_head_ckpt_path: str = None,
     ):
         super().__init__()
         model_path = "/home/zhouyi/repo/model_DepthAnythingV3/checkpoints/DA3-LARGE-1.1"
@@ -84,8 +85,25 @@ class SegDA3(nn.Module):
             in_channels=in_channels,
             embed_dim=embed_dim,
             num_classes=num_classes,
-            readout_indices=(0, 1, 2, 3),
+            readout_indices=range(len(self.export_feat_layers)),
         )
+        
+        if seg_head_ckpt_path:
+            print(f"Loading trained head from {seg_head_ckpt_path}...")
+            # 加载权重到内存
+            state_dict = torch.load(seg_head_ckpt_path, map_location='cpu')
+            
+            # strict=False 可以避免因为 DA3 内部一些非训练参数不一致导致的报错
+            # 只要 seg_head 的 key 匹配即可
+            missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
+            
+            # 检查 seg_head 是否加载成功
+            head_keys = [k for k in missing_keys if 'seg_head' in k]
+            if len(head_keys) > 0:
+                print(f"Warning: seg_head missing keys: {head_keys}")
+            else:
+                print("Successfully loaded seg_head weights.")
+        
 
     @staticmethod
     def _aux_feat_to_nchw(feat: np.ndarray, device: torch.device) -> torch.Tensor:
@@ -107,7 +125,7 @@ class SegDA3(nn.Module):
         """
         assert hasattr(prediction, "aux") and isinstance(prediction.aux, dict), "prediction.aux missing"
 
-        # 用 processed_images 的分辨率作为最终输出 H,W（和你 demo 对齐）
+        # 用 processed_images 的分辨率作为最终输出 H,W
         assert prediction.processed_images is not None
         H, W = prediction.processed_images.shape[1], prediction.processed_images.shape[2]
 
@@ -132,22 +150,53 @@ class SegDA3(nn.Module):
         """
         device = next(self.seg_head.parameters()).device
 
-        pred = self.da3.inference(
+        output = self.da3.inference(
             image=image,
             export_feat_layers=self.export_feat_layers,
         )
 
         # 额外 head（只有 head 在 device 上跑）
-        self._run_motion_head(pred, device)
+        self._run_motion_head(output, device)
 
-        return pred
+        return output
 
-    def forward(self, *args, **kwargs):
+    def forward(self, images):
         """
-        训练建议别走这里（因为 api.inference 通常是 no_grad + numpy 输出）。
-        如果你后面要训练 motion head，建议你用：
-          - 先离线跑 inference 导出 aux（numpy）
-          - 或者改为：直接调用 da3.model.forward 得到 torch feat（会更快且可控）
-        但你当前需求是“主体必须用 api output”，所以这里不提供训练 forward。
+        Args:
+            images: [B, 3, H, W] Tensor, normalized (ImageNet mean/std)
+        Returns:
+            logits: [B, num_classes, H, W]
         """
-        raise RuntimeError("Use .inference(...) for this wrapper (API-driven).")
+        # 1. 维度适配：DA3 底层期望 [B, N, 3, H, W]，通常训练时 N=1 (单视角)
+        if images.ndim == 4:
+            images_in = images.unsqueeze(1)  # [B, 1, 3, H, W]
+        else:
+            images_in = images
+
+        H, W = images.shape[-2], images.shape[-1]
+
+        # 2. 骨干提取特征 (冻结状态，不计算梯度以节省显存)
+        with torch.no_grad():
+            # 直接调用底层 .model，绕过 api.py 的 @inference_mode 装饰器
+            # 这样输出是纯 Tensor，且不会破坏外部可能的梯度上下文
+            out = self.da3.model(
+                images_in, 
+                export_feat_layers=self.export_feat_layers
+            )
+
+        # 3. 特征处理：从 [B, 1, h, w, C] -> [B, C, h, w]
+        feats = []
+        for layer in self.export_feat_layers:
+            # 获取对应层特征
+            feat = out['aux'][f"feat_layer_{layer}"]  # Shape: [B, 1, h, w, C]
+            
+            # 去掉 View 维度并调整通道顺序
+            feat = feat.squeeze(1)                     # [B, h, w, C]
+            feat = feat.permute(0, 3, 1, 2)            # [B, C, h, w]
+            feats.append(feat)
+
+        # 4. 运行分割头 (只有这里计算梯度)
+        logits = self.seg_head(feats, H, W)
+        
+        return logits
+        

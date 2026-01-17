@@ -37,6 +37,10 @@ start_time = time.time()
 video_path_name = os.path.basename(video_path)
 output_dir = os.path.join(output_dir, video_path_name)
 os.makedirs(output_dir, exist_ok=True)
+output_image_dir = os.path.join(output_dir, "images")
+os.makedirs(output_image_dir, exist_ok=True)
+output_mask_dir = os.path.join(output_dir, "masks")
+os.makedirs(output_mask_dir, exist_ok=True)
 # ==============================================================================
 # helper functions
 # ==============================================================================
@@ -199,10 +203,10 @@ for frame_idx in tqdm(sorted_frame_indices):
     filename_base = f"{frame_idx:05d}"
     
     # 保存原图
-    cv2.imwrite(os.path.join(output_dir, f"{filename_base}.jpg"), frame_bgr)
+    cv2.imwrite(os.path.join(output_image_dir, f"{filename_base}.png"), frame_bgr)
     
     # 保存 Mask
-    cv2.imwrite(os.path.join(output_dir, f"{filename_base}_mask.png"), final_mask_img)
+    cv2.imwrite(os.path.join(output_mask_dir, f"{filename_base}.png"), final_mask_img)
 
 print("Processing completed. Outputs saved to:", output_dir)
 

@@ -17,6 +17,7 @@ IMG_PATHS = [
 ]
 
 SAVE_PATH = "/home/zhouyi/repo/model_DepthAnythingV3/outputs/SegDA3_eval.png"
+ckpt_path = "/home/zhouyi/repo/model_DepthAnythingV3/checkpoints/SegDA3/model.pth"
 # ===========================================
 
 
@@ -25,7 +26,7 @@ def main():
 
     # 1) 加载模型（新 SegDA3 内部自己 from_pretrained + 冻结 DA3）
     print("Loading model...")
-    model = SegDA3(num_classes=2).to(device)
+    model = SegDA3(num_classes=2, seg_head_ckpt_path=ckpt_path).to(device)
 
     # 2) 推理（主体走 API inference：depth/processed_images/aux 都是 API 原样）
     print("Running inference...")
