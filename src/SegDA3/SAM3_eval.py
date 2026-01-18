@@ -9,17 +9,17 @@ import cv2
 import numpy as np
 from sam3.visualization_utils import (
     prepare_masks_for_visualization,
-    visualize_formatted_frame_output,
 )
 from tqdm import tqdm
 # ==============================================================================
 # static settings
 # ==============================================================================
-video_path = "/home/zhouyi/repo/dataset/2077/scene1" 
+# video_path = "/home/zhouyi/repo/dataset/2077/scene1" 
 # video_path = "/home/zhouyi/repo/model_sam3/assets/videos/dancer"
-output_dir = "/home/zhouyi/repo/model_DepthAnythingV3/outputs"
-text_prompt = "person" 
+video_path = "/home/zhouyi/repo/UKA1/Case1Part1_1cropped"
 
+output_dir = "/home/zhouyi/repo/model_DepthAnythingV3/inputs"
+text_prompt = "metal" 
 
 # ==============================================================================
 # setup

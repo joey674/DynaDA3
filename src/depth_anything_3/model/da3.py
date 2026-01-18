@@ -126,6 +126,8 @@ class DepthAnything3Net(nn.Module):
             output = self._process_depth_head(feats, H, W)
             output = self._process_camera_estimation(feats, H, W, output)
 
+        output.aux = self._extract_auxiliary_features(aux_feats, export_feat_layers, H, W)
+
         return output
 
     def _process_depth_head(
@@ -152,3 +154,24 @@ class DepthAnything3Net(nn.Module):
             output.intrinsics = ixt
 
         return output
+
+    def _extract_auxiliary_features(
+        self, feats: list[torch.Tensor], feat_layers: list[int], H: int, W: int
+    ) -> Dict[str, torch.Tensor]:
+        """Extract auxiliary features from specified layers."""
+        aux_features = Dict()
+        assert len(feats) == len(feat_layers)
+        for feat, feat_layer in zip(feats, feat_layers):
+            # Reshape features to spatial dimensions
+            feat_reshaped = feat.reshape(
+                [
+                    feat.shape[0],
+                    feat.shape[1],
+                    H // self.PATCH_SIZE,
+                    W // self.PATCH_SIZE,
+                    feat.shape[-1],
+                ]
+            )
+            aux_features[f"feat_layer_{feat_layer}"] = feat_reshaped
+
+        return aux_features

@@ -6,27 +6,29 @@ import torch.nn.functional as F
 from depth_anything_3.api import DepthAnything3
 from depth_anything_3.utils.logger import logger
 
-# ==========================================
-# 1) DPT 分割头
-#    输入：list[Tensor]，每个 Tensor: [N, C, h, w]
-#    输出：logits [N, K, H, W]
-# ==========================================
-class SimpleDPTHead(nn.Module):
+class SegDPTHead(nn.Module):
+    """
+    DPT 分割头
+    Args:
+        list[Batch_tensor]，每个 Batch_tensor: [N, Feat_Dim, h, w]
+    Return:
+        logits [N, K, H, W]
+    """
     def __init__(self, in_channels=1024, embed_dim=256, num_classes=2, readout_indices=(0, 1, 2, 3)):
         super().__init__()
-        self.readout_indices = list(readout_indices)
+        self.readout_indices = list(readout_indices)# 选择哪些 Transformer 层的特征用于分割头
 
-        self.projects = nn.ModuleList(
+        self.projects_layer = nn.ModuleList(
             [
                 nn.Sequential(
-                    nn.Conv2d(in_channels, embed_dim, kernel_size=1),
+                    nn.Conv2d(in_channels, embed_dim, kernel_size=1),# 1x1 卷积: 用于将原始高维特征（如 1024 维）降维到统一的 embed_dim（如 256 维），减少计算量。
                     nn.ReLU(inplace=True),
                 )
-                for _ in range(len(self.readout_indices))
+                for _ in range(len(self.readout_indices))# 这个投影层有并行的N个卷积模块, 每个对应处理不同特征层出来的特征
             ]
         )
 
-        self.output_head = nn.Sequential(
+        self.output_layer = nn.Sequential(
             nn.Conv2d(embed_dim, embed_dim // 2, kernel_size=3, padding=1),
             nn.BatchNorm2d(embed_dim // 2),
             nn.ReLU(inplace=True),
@@ -34,33 +36,41 @@ class SimpleDPTHead(nn.Module):
         )
 
     def forward(self, features: list[torch.Tensor], H: int, W: int) -> torch.Tensor:
-        # features: list of [N, C, h, w]
-        selected = [features[i] for i in self.readout_indices]
+        # features: list of [N, Feat_Dim, h, w]
+        selected_block_features = [features[i] for i in self.readout_indices]
 
-        # 对齐到同一分辨率（以第一个为基准）
-        target_h, target_w = selected[0].shape[-2:]
+        # 特征投影与对齐
+        # 使用projects_layer对每个选定的特征块进行投影, 并将它们上采样到相同的空间分辨率
+        target_h, target_w = selected_block_features[0].shape[-2:]
         proj = []
-        for i, feat in enumerate(selected):
-            x = self.projects[i](feat)
+        for i, feat in enumerate(selected_block_features):
+            x = self.projects_layer[i](feat)
             if x.shape[-2:] != (target_h, target_w):
                 x = F.interpolate(x, size=(target_h, target_w), mode="bilinear", align_corners=False)
             proj.append(x)
 
+        # 特征融合
+        # 这是一种 Simple Summation (简单加和) 的融合方式 将浅层（纹理细节丰富）和深层（语义信息丰富）的特征直接叠加。
         fused = 0
         for x in proj:
             fused = fused + x
 
-        logits = self.output_head(fused)  # [N, K, target_h, target_w]
+        # 输出层
+        # 融合后的特征通过一个小型卷积网络进行最后的预测：
+        # 3x3 卷积 + BN + ReLU: 用于平滑特征，消除由于插值（Interpolation）产生的伪影，并进一步提取局部特征。
+        # 1x1 卷积: 最终投影到 num_classes 通道，得到每个类别的置信度分数（Logits）。
+        logits = self.output_layer(fused)  # [N, K, target_h, target_w]
         logits = F.interpolate(logits, size=(H, W), mode="bilinear", align_corners=False)  # [N,K,H,W]
         return logits
 
 
-# ==========================================
-# 2) SegDA3：完全走 API inference
-#    - 主体输出：DepthAnything3.inference() 的 Prediction 原样
-#    - 额外输出：motion_seg_logits / motion_seg_mask
-# ==========================================
+
 class SegDA3(nn.Module):
+    """
+    SegDA3: 基于 DepthAnything3 + DPTHead 的运动分割模型
+    - 主体输出 DepthAnything3.inference() 的 Prediction 原样
+    - 额外输出motion_seg_logits / motion_seg_mask
+    """
     def __init__(
         self,
         num_classes: int = 2,
@@ -81,7 +91,7 @@ class SegDA3(nn.Module):
 
         self.export_feat_layers = list(export_feat_layers)
 
-        self.seg_head = SimpleDPTHead(
+        self.seg_head = SegDPTHead(
             in_channels=in_channels,
             embed_dim=embed_dim,
             num_classes=num_classes,
@@ -93,18 +103,14 @@ class SegDA3(nn.Module):
             # 加载权重到内存
             state_dict = torch.load(seg_head_ckpt_path, map_location='cpu')
             
-            # strict=False 可以避免因为 DA3 内部一些非训练参数不一致导致的报错
-            # 只要 seg_head 的 key 匹配即可
+            # strict=False 可以避免因为 DA3 内部一些非训练参数不一致导致的报错 只要 seg_head 的 key 匹配即可
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             
             # 检查 seg_head 是否加载成功
             head_keys = [k for k in missing_keys if 'seg_head' in k]
             if len(head_keys) > 0:
-                print(f"Warning: seg_head missing keys: {head_keys}")
-            else:
-                print("Successfully loaded seg_head weights.")
+                raise ValueError("Failed to load seg_head weights.")
         
-
     @staticmethod
     def _aux_feat_to_nchw(feat: np.ndarray, device: torch.device) -> torch.Tensor:
         """

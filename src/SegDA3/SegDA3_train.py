@@ -15,8 +15,8 @@ from SegDA3_model import SegDA3
 # ================= config =================
 CONFIG = {
     "video_dirs": [
-        "/home/zhouyi/repo/model_DepthAnythingV3/outputs/dancer",
-        "/home/zhouyi/repo/model_DepthAnythingV3/outputs/2077scene1",
+        "/home/zhouyi/repo/model_DepthAnythingV3/inputs/dancer",
+        "/home/zhouyi/repo/model_DepthAnythingV3/inputs/2077scene1",
     ],
     "save_dir": "/home/zhouyi/repo/model_DepthAnythingV3/checkpoints/SegDA3",
     "num_classes": 2,
