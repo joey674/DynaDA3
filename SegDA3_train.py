@@ -15,11 +15,16 @@ from SegDA3_model import SegDA3
 # ================= config =================
 CONFIG = {
     "video_dirs": [
-        "/home/zhouyi/repo/model_DepthAnythingV3/inputs/dancer",
-        "/home/zhouyi/repo/model_DepthAnythingV3/inputs/2077scene1",
-        
+        "/home/zhouyi/repo/SegDA3/inputs/dancer",
+        "/home/zhouyi/repo/SegDA3/inputs/wildgs_ANYmal1",
+        "/home/zhouyi/repo/SegDA3/inputs/wildgs_racket1",
+        "/home/zhouyi/repo/SegDA3/inputs/wildgs_ANYmal2",
+        "/home/zhouyi/repo/SegDA3/inputs/wildgs_racket2",
+        "/home/zhouyi/repo/SegDA3/inputs/wildgs_ANYmal3",
+        "/home/zhouyi/repo/SegDA3/inputs/wildgs_racket3",
+        "/home/zhouyi/repo/SegDA3/inputs/wildgs_racket4",
     ],
-    "save_dir": "/home/zhouyi/repo/model_DepthAnythingV3/checkpoints/SegDA3",
+    "save_dir": "/home/zhouyi/repo/SegDA3/checkpoints/SegDA3",
     "num_classes": 2,
     "seq_range": (2, 5),
     "lr": 1e-4,

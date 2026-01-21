@@ -1,5 +1,5 @@
 # DA3
-cd /home/zhouyi/repo/model_DepthAnythingV3
+cd /home/zhouyi/repo/SegDA3
 pip install xformers torch\>=2 torchvision
 pip install -e . 
 

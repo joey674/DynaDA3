@@ -18,20 +18,20 @@ from depth_anything_3.utils.visualize import visualize_depth
 # ]
 # 2077scene1
 IMG_PATHS = [ 
-    "/home/zhouyi/repo/model_DepthAnythingV3/inputs/2077scene1/images/00000.png",
-    "/home/zhouyi/repo/model_DepthAnythingV3/inputs/2077scene1/images/00001.png",
-    "/home/zhouyi/repo/model_DepthAnythingV3/inputs/2077scene1/images/00002.png",
-    "/home/zhouyi/repo/model_DepthAnythingV3/inputs/2077scene1/images/00003.png",
-    "/home/zhouyi/repo/model_DepthAnythingV3/inputs/2077scene1/images/00004.png",
-    "/home/zhouyi/repo/model_DepthAnythingV3/inputs/2077scene1/images/00005.png",
-    "/home/zhouyi/repo/model_DepthAnythingV3/inputs/2077scene1/images/00006.png",
-    "/home/zhouyi/repo/model_DepthAnythingV3/inputs/2077scene1/images/00007.png",
-    "/home/zhouyi/repo/model_DepthAnythingV3/inputs/2077scene1/images/00008.png",
+    "/home/zhouyi/repo/dataset/2077/scene1/000005.jpg",
+    "/home/zhouyi/repo/dataset/2077/scene1/000006.jpg",
+    "/home/zhouyi/repo/dataset/2077/scene1/000007.jpg",
+    "/home/zhouyi/repo/dataset/2077/scene1/000008.jpg",
+    "/home/zhouyi/repo/dataset/2077/scene1/000009.jpg", 
+    "/home/zhouyi/repo/dataset/2077/scene1/000010.jpg", 
+    "/home/zhouyi/repo/dataset/2077/scene1/000011.jpg", 
+    "/home/zhouyi/repo/dataset/2077/scene1/000012.jpg", 
+    "/home/zhouyi/repo/dataset/2077/scene1/000013.jpg", 
 ]
 
 
-SAVE_PATH = "/home/zhouyi/repo/model_DepthAnythingV3/outputs/SegDA3_eval.png"
-ckpt_path = "/home/zhouyi/repo/model_DepthAnythingV3/checkpoints/SegDA3/model.pth"
+SAVE_PATH = "/home/zhouyi/repo/SegDA3/outputs/SegDA3_eval.png"
+ckpt_path = "/home/zhouyi/repo/SegDA3/checkpoints/SegDA3/model.pth"
 # ===========================================
 
 

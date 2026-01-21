@@ -9,10 +9,10 @@ import matplotlib.pyplot as plt
 
 
 # ================= 配置区域 =================
-output_folder = "/home/zhouyi/repo/model_DepthAnythingV3/outputs"
+output_folder = "/home/zhouyi/repo/SegDA3/outputs"
 os.makedirs(output_folder, exist_ok=True)
 
-model_path = "/home/zhouyi/repo/model_DepthAnythingV3/checkpoints/DA3-LARGE-1.1"
+model_path = "/home/zhouyi/repo/SegDA3/checkpoints/DA3-LARGE-1.1"
 
 image_paths = [
     "/home/zhouyi/repo/dataset/2077/scene1/000005.jpg",
