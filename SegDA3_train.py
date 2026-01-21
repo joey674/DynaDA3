@@ -17,6 +17,7 @@ CONFIG = {
     "video_dirs": [
         "/home/zhouyi/repo/model_DepthAnythingV3/inputs/dancer",
         "/home/zhouyi/repo/model_DepthAnythingV3/inputs/2077scene1",
+        
     ],
     "save_dir": "/home/zhouyi/repo/model_DepthAnythingV3/checkpoints/SegDA3",
     "num_classes": 2,

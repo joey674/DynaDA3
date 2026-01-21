@@ -3,7 +3,7 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 
-from SegDA3.SegDA3_model import SegDA3
+from SegDA3_model import SegDA3
 from depth_anything_3.utils.visualize import visualize_depth
 
 
@@ -40,8 +40,7 @@ def main():
 
     # 1) 加载模型（新 SegDA3 内部自己 from_pretrained + 冻结 DA3）
     print("Loading model...")
-    model = SegDA3(num_classes=2,
-                    seg_head_ckpt_path=ckpt_path
+    model = SegDA3(seg_head_ckpt_path=ckpt_path
                     ).to(device)
 
     # 2) 推理（主体走 API inference：depth/processed_images/aux 都是 API 原样）

@@ -1,9 +1,16 @@
+# DA3
+cd /home/zhouyi/repo/model_DepthAnythingV3
+pip install xformers torch\>=2 torchvision
+pip install -e . 
+
 # SegDA3
 conda activate da3-slam
-cd src/SeGDA3 
 python SegDA3_eval.py
 
 # SAM3 for dataset:
 conda activate sam3
-cd src/SeGDA3 
 python SAM3_eval.py
+
+# dataset wildgs-slam
+git clone https://huggingface.co/datasets/gradient-spaces/Wild-SLAM
+
