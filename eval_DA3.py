@@ -24,7 +24,7 @@ image_paths = [
 
 export_feat_layers = [3, 7, 11, 15, 19, 23]
 
-save_path = os.path.join(output_folder, "eval_DA3.png")
+save_path = os.path.join(output_folder, "DA3_eval.png")
 if os.path.exists(save_path):
     os.remove(save_path)
     print(f"Removed existing file: {save_path}")

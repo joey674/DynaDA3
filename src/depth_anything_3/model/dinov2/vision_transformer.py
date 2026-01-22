@@ -317,7 +317,7 @@ class DinoVisionTransformer(nn.Module):
                 kwargs.get("cam_token", None) is None:
                 # Select reference view using configured strategy
                 strategy = kwargs.get("ref_view_strategy", "saddle_balanced")
-                logger.info(f"Selecting reference view using strategy: {strategy}")
+                # logger.info(f"Selecting reference view using strategy: {strategy}")
                 b_idx = select_reference_view(x, strategy=strategy)
                 # Reorder views to place reference view first
                 x = reorder_by_reference(x, b_idx)

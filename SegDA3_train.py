@@ -14,6 +14,7 @@ from SegDA3_model import SegDA3
 
 # ================= config =================
 CONFIG = {
+    # Data Configuration
     "video_dirs": [
         "/home/zhouyi/repo/dataset_segda3_train/dancer",
         # "/home/zhouyi/repo/dataset_segda3_train/wildgs_ANYmal1",
@@ -25,11 +26,13 @@ CONFIG = {
         # "/home/zhouyi/repo/dataset_segda3_train/wildgs_racket4",
     ],
     "save_dir": "/home/zhouyi/repo/checkpoint/SegDA3",
-    "seq_range": (2, 5),
-    "lr": 1e-4,
-    "epochs": 2,
-    "input_size": (518, 518),
-    "num_workers": 4,
+    "seq_range": (2, 20),
+    # Training Hyperparameters
+    "learning_rate": 1e-4, # 决定了模型更新权重的步长,1e-4 是 Transformer 类模型常用的经验值
+    "epochs": 1,
+    "batch_size": 1, # 每次迭代epoch训练中使用的样本数量, 限定就为1, 因为每个样本已经包含了一个视频序列
+    # System Configuration
+    "num_workers": 4, # DataLoader 的子进程数量,决定了有多少个 CPU 子进程在后台同时帮你读取和预处理图片
 }
 
 # ================= dataset =================
@@ -86,11 +89,11 @@ class MultiVideoDataset(Dataset):
             clip_imgs.append(self.img_transform(img))
             clip_masks.append(torch.from_numpy(mask_arr).long())
 
-        # ---------------------------------------------------------
-        # 核心修改：确保输出维度是 [B=1, N, 3, H, W]
-        # ---------------------------------------------------------
-        imgs_tensor = torch.stack(clip_imgs).unsqueeze(0)   # [1, N, 3, H, W]
-        masks_tensor = torch.stack(clip_masks).unsqueeze(0) # [1, N, H, W]
+        # Dataset 返回的是单个样本，不需要自己伪造 Batch 维度
+        # imgs_tensor shape: [N, 3, H, W]
+        # masks_tensor shape: [N, H, W]
+        imgs_tensor = torch.stack(clip_imgs)   
+        masks_tensor = torch.stack(clip_masks) 
         
         return imgs_tensor, masks_tensor
 
@@ -100,35 +103,36 @@ def train():
     os.makedirs(CONFIG["save_dir"], exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    dataset = MultiVideoDataset(CONFIG["video_dirs"], CONFIG["input_size"], CONFIG["seq_range"])
+    dataset = MultiVideoDataset(video_dirs=CONFIG["video_dirs"],seq_range= CONFIG["seq_range"])
+    
+    # DataLoader 会自动把多个样本堆叠成 Batch [1, N, 3, H, W]
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=CONFIG["num_workers"], pin_memory=True)
 
     model = SegDA3().to(device)
     model.train()
 
-    optimizer = optim.AdamW(model.motion_head.parameters(), lr=CONFIG["lr"], weight_decay=0.01)
+    optimizer = optim.AdamW(model.motion_head.parameters(), lr=CONFIG["learning_rate"], weight_decay=0.01)
     criterion = nn.CrossEntropyLoss()
     scaler = GradScaler()
 
     for epoch in range(CONFIG["epochs"]):
-        epoch_loss, epoch_iou = 0, 0
+        epoch_loss = 0 
         pbar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{CONFIG['epochs']}")
 
         for imgs, masks in pbar:
-            # 此时 imgs 的形状从 dataloader 出来是 [1, 1, N, 3, H, W] 
-            # (因为 Dataset 出一个 B=1，DataLoader 又套了一个 B=1)
-            # 所以我们需要去掉 DataLoader 套的那一层
-            imgs = imgs.squeeze(0).to(device)   # [1, N, 3, H, W]
-            masks = masks.squeeze(0).to(device) # [1, N, H, W]
+            # DataLoader 出来的 imgs 已经是 [B, N, 3, H, W]，此处 B=1
+            imgs = imgs.to(device)   
+            masks = masks.to(device) 
             
             optimizer.zero_grad()
 
             with autocast():
-                # model 接收 [B, N, 3, H, W] 并返回 [B*N, 2, H, W]
-                logits = model(imgs) 
+                # model 接收 [B, N, 3, H, W]
+                logits = model(imgs) # 返回 [B*N, 2, H, W]
                 
-                # 计算 Loss 前，将 masks 展平为 [B*N, H, W]
+                # Masks: [B, N, H, W] -> [B*N, H, W] 以匹配 Logits
                 masks_flatten = masks.view(-1, masks.shape[-2], masks.shape[-1])
+                
                 loss = criterion(logits, masks_flatten)
 
             scaler.scale(loss).backward()
@@ -136,11 +140,10 @@ def train():
             scaler.update()
 
             epoch_loss += loss.item()
-            with torch.no_grad():
-                pbar.set_postfix({"Loss": f"{loss.item():.4f}"})
+            pbar.set_postfix({"Loss": f"{loss.item():.4f}"})
 
-        print(f"Epoch {epoch+1} Avg Loss: {epoch_loss/len(dataloader):.4f}, mIoU: {epoch_iou/len(dataloader):.4f}")
-        torch.save(model.state_dict(), os.path.join(CONFIG["save_dir"], "model.pth"))
+        print(f"Epoch {epoch+1} Avg Loss: {epoch_loss/len(dataloader):.4f}")
+        torch.save(model.state_dict(), os.path.join(CONFIG["save_dir"], "motion_head.pth"))
 
 if __name__ == "__main__":
     train()

@@ -7,8 +7,13 @@ from depth_anything_3.api import DepthAnything3
 from depth_anything_3.utils.logger import logger
 
 DA3_VITG_CHANNELS = 1536 
+DA3_VITL_CHANNELS = 1024
+DA3_VITG_FEAT_LAYERS=(21, 27, 33, 39)
+DA3_VITL_FEAT_LAYERS=(11, 15, 19, 23)
 DA3_VITG_CKPT_PATH = "/home/zhouyi/repo/checkpoint/DA3-GIANT-1.1"
-MOTIONDPT_EMBED_DIM = 128
+DA3_VITL_CKPT_PATH = "/home/zhouyi/repo/checkpoint/DA3-LARGE-1.1"
+MOTIONDPT_EMBED_DIM = 256
+
 
 class MotionDPT(nn.Module):
     """
@@ -18,11 +23,11 @@ class MotionDPT(nn.Module):
         N: Frame Sequence Length
         H, W: 原始输入图像分辨率 (例如 518 * 518)
         h, w: 特征图分辨率; 对于 ViT 架构，通常 patch size 为 14, 所以 h = H/14, w = W/14 (518/14=37)
-        c_in: 输入通道数 (DA3_VITG_CHANNELS = 1536)
+        c_in: 输入通道数 (DA3_CHANNELS = 1536)
         c_embed: 嵌入维度 (MOTIONDPT_EMBED_DIM)
         feat_layers: 从 DA3 提取的特征层索引列表 (例如 [3, 9, 15, 21, 27, 33, 39])
     """
-    def __init__(self, c_in=DA3_VITG_CHANNELS, c_embed=MOTIONDPT_EMBED_DIM, feat_layers=()):
+    def __init__(self, c_in=DA3_VITL_CHANNELS, c_embed=MOTIONDPT_EMBED_DIM, feat_layers=()):
         super().__init__()
         self.feat_layers = list(feat_layers)# 选择哪些 Transformer 层的特征用于分割头
 
@@ -56,14 +61,14 @@ class MotionDPT(nn.Module):
             x = self.projects_layer[i](feat)
 
             # 对齐与插值 [N, c_embed, h, w] =>[N, c_embed, h, w]
-            # F.interpolate作用: 确保所有层特征分辨率一致（以第一层特征的 $h, w$ 为准）。
+            # F.interpolate作用: 确保所有层特征分辨率一致（以第一层特征的 h, w 为准）
             # 在标准 ViT 中通常尺寸一致，但此步骤保证了鲁棒性
             if x.shape[-2:] != (target_h, target_w):
                 x = F.interpolate(x, size=(target_h, target_w), mode="bilinear", align_corners=False)
             proj.append(x)
 
         # 特征融合 [N, c_embed, h, w] =>[N, c_embed, h, w]
-        # 这是一种 Simple Summation (简单加和) 的融合方式 将浅层（纹理细节丰富）和深层（语义信息丰富）的特征直接叠加
+        # 这是一种 Simple Summation 的融合方式 将浅层（纹理细节丰富）和深层（语义信息丰富）的特征直接叠加
         fused = 0
         for x in proj:
             fused = fused + x
@@ -77,22 +82,19 @@ class MotionDPT(nn.Module):
         return logits
 
 
-
 class SegDA3(nn.Module):
     """
-    SegDA3: 基于 DepthAnything3 + DPTHead 的运动分割模型
-    - 主体输出 DepthAnything3.inference() 的 Prediction 原样
-    - 额外输出motion_seg_logits / motion_seg_mask
+    SegDA3
     """
     def __init__(
         self,
-        export_feat_layers=(3, 9, 15, 21, 27, 33, 39),
+        export_feat_layers=DA3_VITL_FEAT_LAYERS,
         motion_head_ckpt_path: str = None,
     ):
         super().__init__()
 
-        print(f"Loading DA3 from local path: {DA3_VITG_CKPT_PATH}...")
-        self.da3 = DepthAnything3.from_pretrained(DA3_VITG_CKPT_PATH)
+        print(f"Loading DA3 from local path: {DA3_VITL_CKPT_PATH}...")
+        self.da3 = DepthAnything3.from_pretrained(DA3_VITL_CKPT_PATH)
 
         # 冻结 DA3
         for p in self.da3.parameters():
@@ -102,7 +104,7 @@ class SegDA3(nn.Module):
         self.export_feat_layers = list(export_feat_layers)
 
         self.motion_head = MotionDPT(
-            readout_indices=range(len(self.export_feat_layers)),
+            feat_layers=range(len(self.export_feat_layers)),
         )
 
         if motion_head_ckpt_path:
@@ -121,9 +123,8 @@ class SegDA3(nn.Module):
     @staticmethod
     def _aux_feat_to_nchw(feat: np.ndarray, device: torch.device) -> torch.Tensor:
         """
-        写死按照你当前 API inference 的实际输出：
           feat shape: [N, h, w, C]  (例如 5,28,36,1024)
-        返回：
+        Returns:
           torch.Tensor [N, C, h, w] on device
         """
         assert isinstance(feat, np.ndarray), f"aux feat must be numpy, got {type(feat)}"
@@ -134,7 +135,7 @@ class SegDA3(nn.Module):
 
     def _run_motion_head(self, prediction, device: torch.device):
         """
-        从 prediction.aux 取特征，跑 seg_head，写回 prediction.motion_seg_*
+        从 prediction.aux 取特征，跑 motion_head 写回 prediction.motion_seg_logits/motion_seg_mask
         """
         assert hasattr(prediction, "aux") and isinstance(prediction.aux, dict), "prediction.aux missing"
 
@@ -178,9 +179,8 @@ class SegDA3(nn.Module):
 
     def forward(self, image):
         """
-        在训练过程(只训练特定任务头)中使用forward; 
+        在训练过程(只训练特定任务头)中使用forward, 由于训练 motion_head,所以这里forward需要返回motion_head的logits; 
         在推理过程(需要所有其他头的输出)使用inferrence;
-        由于只训练 motion_head,所以这里forward只需要返回seg_head的logits
         Args:
             images: [B, N, 3, H, W] Tensor, normalized (ImageNet mean/std)
         Returns:
@@ -195,13 +195,8 @@ class SegDA3(nn.Module):
 
         B, N, _, H, W = image.shape
 
-        # 骨干提取特征(冻结状态，不计算梯度以节省显存) 
-        # [B, N, h=H/14, w=W/14, Feat_Dim=1024]
-        # 把 patch 的信息融合到Feat_Dim里
+        # 冻结 DA3 并提取特征
         with torch.no_grad():
-            # 为什么要用 with torch.no_grad()：
-            # 显存优化：DA3 Large 参数量巨大，如果不加这个，PyTorch 会记录每一层的激活值用于求导，普通显卡会立刻 OOM（显存溢出）。
-            # 职责分离：我们相信预训练好的 DA3 提取特征的能力，所以“冻结”它，只让权重在 motion_head 里流动。
             out = self.da3.model(
                 image, 
                 export_feat_layers=self.export_feat_layers
@@ -222,9 +217,9 @@ class SegDA3(nn.Module):
             feat = feat.permute(0, 3, 1, 2).contiguous()
             feats.append(feat)
 
-        # 4. 运行分割头
+        # 运行分割头
         # 此时 feats 里的每个 Tensor 都是 [Batch_total, Feat_Dim, h, w]
-        logits = self.motion_head(feats, H, W) # 返回 [B*N, 2, H, W]
+        logits = self.motion_head(feats, H, W) #  [B*N, 2, H, W]
         
         return logits
         
