@@ -1,13 +1,12 @@
-# DA3
-cd /home/zhouyi/repo/SegDA3
-pip install xformers torch\>=2 torchvision
-pip install -e . 
-
-# SegDA3
-conda activate da3-slam
-python SegDA3_eval.py
 
 # SAM3 for dataset:
+conda create -n sam3 python=3.12
+conda deactivate
+conda activate sam3
+pip install torch==2.7.0 torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+cd /home/zhouyi/repo/sam3
+pip install -e .
+
 conda activate sam3
 python SAM3_eval.py
 

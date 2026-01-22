@@ -15,20 +15,19 @@ from SegDA3_model import SegDA3
 # ================= config =================
 CONFIG = {
     "video_dirs": [
-        "/home/zhouyi/repo/SegDA3/inputs/dancer",
-        "/home/zhouyi/repo/SegDA3/inputs/wildgs_ANYmal1",
-        "/home/zhouyi/repo/SegDA3/inputs/wildgs_racket1",
-        "/home/zhouyi/repo/SegDA3/inputs/wildgs_ANYmal2",
-        "/home/zhouyi/repo/SegDA3/inputs/wildgs_racket2",
-        "/home/zhouyi/repo/SegDA3/inputs/wildgs_ANYmal3",
-        "/home/zhouyi/repo/SegDA3/inputs/wildgs_racket3",
-        "/home/zhouyi/repo/SegDA3/inputs/wildgs_racket4",
+        "/home/zhouyi/repo/dataset_segda3_train/dancer",
+        # "/home/zhouyi/repo/dataset_segda3_train/wildgs_ANYmal1",
+        # "/home/zhouyi/repo/dataset_segda3_train/wildgs_racket1",
+        # "/home/zhouyi/repo/dataset_segda3_train/wildgs_ANYmal2",
+        # "/home/zhouyi/repo/dataset_segda3_train/wildgs_racket2",
+        # "/home/zhouyi/repo/dataset_segda3_train/wildgs_ANYmal3",
+        # "/home/zhouyi/repo/dataset_segda3_train/wildgs_racket3",
+        # "/home/zhouyi/repo/dataset_segda3_train/wildgs_racket4",
     ],
-    "save_dir": "/home/zhouyi/repo/SegDA3/checkpoints/SegDA3",
-    "num_classes": 2,
+    "save_dir": "/home/zhouyi/repo/checkpoint/SegDA3",
     "seq_range": (2, 5),
     "lr": 1e-4,
-    "epochs": 5,
+    "epochs": 2,
     "input_size": (518, 518),
     "num_workers": 4,
 }
@@ -95,18 +94,6 @@ class MultiVideoDataset(Dataset):
         
         return imgs_tensor, masks_tensor
 
-# ================= vis =================
-def calculate_iou(pred, label, num_classes):
-    pred = torch.argmax(pred, dim=1)
-    iou_list = []
-    # 如果 label 是 [1, N, H, W]，展平以匹配预测
-    label = label.view(-1, label.shape[-2], label.shape[-1])
-    for cls in range(num_classes):
-        intersection = ((pred == cls) & (label == cls)).sum().item()
-        union = ((pred == cls) | (label == cls)).sum().item()
-        if union == 0: iou_list.append(float('nan'))
-        else: iou_list.append(float(intersection) / float(union))
-    return np.nanmean(iou_list)
 
 # ================= train =================
 def train():
@@ -114,13 +101,12 @@ def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataset = MultiVideoDataset(CONFIG["video_dirs"], CONFIG["input_size"], CONFIG["seq_range"])
-    # 注意：由于 Dataset 已经自带 B 维度，DataLoader 的 batch_size 必须固定为 1
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=CONFIG["num_workers"], pin_memory=True)
 
-    model = SegDA3(num_classes=CONFIG["num_classes"]).to(device)
+    model = SegDA3().to(device)
     model.train()
 
-    optimizer = optim.AdamW(model.seg_head.parameters(), lr=CONFIG["lr"], weight_decay=0.01)
+    optimizer = optim.AdamW(model.motion_head.parameters(), lr=CONFIG["lr"], weight_decay=0.01)
     criterion = nn.CrossEntropyLoss()
     scaler = GradScaler()
 
@@ -151,9 +137,7 @@ def train():
 
             epoch_loss += loss.item()
             with torch.no_grad():
-                batch_iou = calculate_iou(logits, masks, CONFIG["num_classes"])
-                epoch_iou += batch_iou
-            pbar.set_postfix({"Loss": f"{loss.item():.4f}", "mIoU": f"{batch_iou:.4f}"})
+                pbar.set_postfix({"Loss": f"{loss.item():.4f}"})
 
         print(f"Epoch {epoch+1} Avg Loss: {epoch_loss/len(dataloader):.4f}, mIoU: {epoch_iou/len(dataloader):.4f}")
         torch.save(model.state_dict(), os.path.join(CONFIG["save_dir"], "model.pth"))

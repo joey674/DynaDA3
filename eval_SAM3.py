@@ -38,7 +38,7 @@ video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_ANYmal3"
 text_prompts = ["red robot with four legs"] 
 
 
-output_dir = "/home/zhouyi/repo/SegDA3/inputs"
+output_dir = "/home/zhouyi/repo/output"
 
 # ==============================================================================
 # setup

@@ -9,22 +9,22 @@ import matplotlib.pyplot as plt
 
 
 # ================= 配置区域 =================
-output_folder = "/home/zhouyi/repo/SegDA3/outputs"
+output_folder = "/home/zhouyi/repo/output"
 os.makedirs(output_folder, exist_ok=True)
 
-model_path = "/home/zhouyi/repo/SegDA3/checkpoints/DA3-LARGE-1.1"
+model_path = "/home/zhouyi/repo/checkpoint/DA3-GIANT-1.1"
 
 image_paths = [
-    "/home/zhouyi/repo/dataset/2077/scene1/000005.jpg",
-    "/home/zhouyi/repo/dataset/2077/scene1/000006.jpg",
-    "/home/zhouyi/repo/dataset/2077/scene1/000007.jpg",
-    "/home/zhouyi/repo/dataset/2077/scene1/000008.jpg",
-    "/home/zhouyi/repo/dataset/2077/scene1/000009.jpg",
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000005.jpg",
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000006.jpg",
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000007.jpg",
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000008.jpg",
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000009.jpg",
 ]
 
 export_feat_layers = [3, 7, 11, 15, 19, 23]
 
-save_path = os.path.join(output_folder, "input_depth_and_feats.png")
+save_path = os.path.join(output_folder, "eval_DA3.png")
 if os.path.exists(save_path):
     os.remove(save_path)
     print(f"Removed existing file: {save_path}")

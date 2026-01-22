@@ -19,14 +19,14 @@ from PIL import Image  # 全程使用 PIL
 video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_racket1"
 text_prompts = ["person", "racket"] 
 
-output_dir = "/home/zhouyi/repo/SegDA3/inputs"
+output_dir = "/home/zhouyi/repo/dataset_segda3_train"
 # ==============================================================================
 # 2. 初始化 Setup
 # ==============================================================================
 sam3_root = os.path.join(os.path.dirname(sam3.__file__), "..")
 gpus_to_use = range(torch.cuda.device_count())
 
-# 初始化模型 (只做一次，模型加载很慢，不要放在循环里)
+# 初始化模型
 print("Building SAM3 Predictor...")
 predictor = build_sam3_video_predictor(gpus_to_use=gpus_to_use)
 

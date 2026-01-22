@@ -6,61 +6,74 @@ import torch.nn.functional as F
 from depth_anything_3.api import DepthAnything3
 from depth_anything_3.utils.logger import logger
 
-class SegDPTHead(nn.Module):
+DA3_VITG_CHANNELS = 1536 
+DA3_VITG_CKPT_PATH = "/home/zhouyi/repo/checkpoint/DA3-GIANT-1.1"
+MOTIONDPT_EMBED_DIM = 128
+
+class MotionDPT(nn.Module):
     """
-    DPT 分割头
+    Motion DPT 
     Args:
-        list[Batch_tensor]，每个 Batch_tensor: [N, Feat_Dim, h, w]
-    Return:
-        logits [N, K, H, W]
+        B: Batch Size=1
+        N: Frame Sequence Length
+        H, W: 原始输入图像分辨率 (例如 518 * 518)
+        h, w: 特征图分辨率; 对于 ViT 架构，通常 patch size 为 14, 所以 h = H/14, w = W/14 (518/14=37)
+        c_in: 输入通道数 (DA3_VITG_CHANNELS = 1536)
+        c_embed: 嵌入维度 (MOTIONDPT_EMBED_DIM)
+        feat_layers: 从 DA3 提取的特征层索引列表 (例如 [3, 9, 15, 21, 27, 33, 39])
     """
-    def __init__(self, in_channels=1024, embed_dim=256, num_classes=2, readout_indices=(0, 1, 2, 3)):
+    def __init__(self, c_in=DA3_VITG_CHANNELS, c_embed=MOTIONDPT_EMBED_DIM, feat_layers=()):
         super().__init__()
-        self.readout_indices = list(readout_indices)# 选择哪些 Transformer 层的特征用于分割头
+        self.feat_layers = list(feat_layers)# 选择哪些 Transformer 层的特征用于分割头
 
         self.projects_layer = nn.ModuleList(
             [
                 nn.Sequential(
-                    nn.Conv2d(in_channels, embed_dim, kernel_size=1),# 1x1 卷积: 用于将原始高维特征（如 1024 维）降维到统一的 embed_dim（如 256 维），减少计算量。
+                    nn.Conv2d(c_in, c_embed, kernel_size=1),# 1x1 卷积: 用于将原始高维特征(如 1024 维)降维到统一的 embed_dim（如 256 维），减少计算量。
                     nn.ReLU(inplace=True),
                 )
-                for _ in range(len(self.readout_indices))# 这个投影层有并行的N个卷积模块, 每个对应处理不同特征层出来的特征
+                for _ in range(len(self.feat_layers))# 这个投影层有并行的N个卷积模块, 每个对应处理不同特征层出来的特征
             ]
         )
 
+        num_classes = 2  # 运动分割类别数：移动 / 静止
         self.output_layer = nn.Sequential(
-            nn.Conv2d(embed_dim, embed_dim // 2, kernel_size=3, padding=1),
-            nn.BatchNorm2d(embed_dim // 2),
+            nn.Conv2d(c_embed, c_embed // 2, kernel_size=3, padding=1),
+            nn.BatchNorm2d(c_embed // 2),
             nn.ReLU(inplace=True),
-            nn.Conv2d(embed_dim // 2, num_classes, kernel_size=1),
+            nn.Conv2d(c_embed // 2, num_classes, kernel_size=1),
         )
 
     def forward(self, features: list[torch.Tensor], H: int, W: int) -> torch.Tensor:
-        # features: list of [N, Feat_Dim, h, w]
-        selected_block_features = [features[i] for i in self.readout_indices]
+        # features:  [N, c_in, h, w]
+        selected_feat_layers = [features[i] for i in self.feat_layers]
 
-        # 特征投影与对齐
-        # 使用projects_layer对每个选定的特征块进行投影, 并将它们上采样到相同的空间分辨率
-        target_h, target_w = selected_block_features[0].shape[-2:]
+        target_h, target_w = selected_feat_layers[0].shape[-2:]
         proj = []
-        for i, feat in enumerate(selected_block_features):
+        for i, feat in enumerate(selected_feat_layers):
+            # 特征投影 [N, c_in, h, w] => [N, c_embed, h, w]
+            # 使用projects_layer对每个选定的特征块进行投影
             x = self.projects_layer[i](feat)
+
+            # 对齐与插值 [N, c_embed, h, w] =>[N, c_embed, h, w]
+            # F.interpolate作用: 确保所有层特征分辨率一致（以第一层特征的 $h, w$ 为准）。
+            # 在标准 ViT 中通常尺寸一致，但此步骤保证了鲁棒性
             if x.shape[-2:] != (target_h, target_w):
                 x = F.interpolate(x, size=(target_h, target_w), mode="bilinear", align_corners=False)
             proj.append(x)
 
-        # 特征融合
-        # 这是一种 Simple Summation (简单加和) 的融合方式 将浅层（纹理细节丰富）和深层（语义信息丰富）的特征直接叠加。
+        # 特征融合 [N, c_embed, h, w] =>[N, c_embed, h, w]
+        # 这是一种 Simple Summation (简单加和) 的融合方式 将浅层（纹理细节丰富）和深层（语义信息丰富）的特征直接叠加
         fused = 0
         for x in proj:
             fused = fused + x
 
-        # 输出层
-        # 融合后的特征通过一个小型卷积网络进行最后的预测：
-        # 3x3 卷积 + BN + ReLU: 用于平滑特征，消除由于插值（Interpolation）产生的伪影，并进一步提取局部特征。
-        # 1x1 卷积: 最终投影到 num_classes 通道，得到每个类别的置信度分数（Logits）。
-        logits = self.output_layer(fused)  # [N, K, target_h, target_w]
-        logits = F.interpolate(logits, size=(H, W), mode="bilinear", align_corners=False)  # [N,K,H,W]
+        # 输出层 [N, c_embed, h, w] => [N, c_embed/2, h, w]
+        # 融合后的特征通过一个小型卷积网络进行最后的预测
+        # 3x3 卷积 + BN + ReLU: 用于平滑特征，消除由于插值（Interpolation）产生的伪影，并进一步提取局部特征
+        # 1x1 卷积: 最终投影到 2 通道，得到每个类别的置信度分数（Logits）
+        logits = self.output_layer(fused) 
+        logits = F.interpolate(logits, size=(H, W), mode="bilinear", align_corners=False) 
         return logits
 
 
@@ -73,43 +86,37 @@ class SegDA3(nn.Module):
     """
     def __init__(
         self,
-        num_classes: int = 2,
-        embed_dim: int = 256,
-        in_channels: int = 1024,
-        export_feat_layers=(3, 7, 11, 15, 19, 23),
-        seg_head_ckpt_path: str = None,
+        export_feat_layers=(3, 9, 15, 21, 27, 33, 39),
+        motion_head_ckpt_path: str = None,
     ):
         super().__init__()
-        model_path = "/home/zhouyi/repo/SegDA3/checkpoints/DA3-LARGE-1.1"
-        print(f"Loading DA3 from local path: {model_path}...")
-        self.da3 = DepthAnything3.from_pretrained(model_path)
 
-        # 冻结 DA3，只训练 seg_head
+        print(f"Loading DA3 from local path: {DA3_VITG_CKPT_PATH}...")
+        self.da3 = DepthAnything3.from_pretrained(DA3_VITG_CKPT_PATH)
+
+        # 冻结 DA3
         for p in self.da3.parameters():
             p.requires_grad = False
         self.da3.eval()
 
         self.export_feat_layers = list(export_feat_layers)
 
-        self.seg_head = SegDPTHead(
-            in_channels=in_channels,
-            embed_dim=embed_dim,
-            num_classes=num_classes,
+        self.motion_head = MotionDPT(
             readout_indices=range(len(self.export_feat_layers)),
         )
 
-        if seg_head_ckpt_path:
-            print(f"Loading trained head from {seg_head_ckpt_path}...")
+        if motion_head_ckpt_path:
+            print(f"Loading trained head from {motion_head_ckpt_path}...")
             # 加载权重到内存
-            state_dict = torch.load(seg_head_ckpt_path, map_location='cpu')
+            state_dict = torch.load(motion_head_ckpt_path, map_location='cpu')
             
-            # strict=False 可以避免因为 DA3 内部一些非训练参数不一致导致的报错 只要 seg_head 的 key 匹配即可
+            # strict=False 可以避免因为 DA3 内部一些非训练参数不一致导致的报错 只要 motion_head 的 key 匹配即可
             missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
             
-            # 检查 seg_head 是否加载成功
-            head_keys = [k for k in missing_keys if 'seg_head' in k]
+            # 检查 motion_head 是否加载成功
+            head_keys = [k for k in missing_keys if 'motion_head' in k]
             if len(head_keys) > 0:
-                raise ValueError("Failed to load seg_head weights.")
+                raise ValueError("Failed to load motion_head weights.")
         
     @staticmethod
     def _aux_feat_to_nchw(feat: np.ndarray, device: torch.device) -> torch.Tensor:
@@ -142,7 +149,7 @@ class SegDA3(nn.Module):
             assert k in prediction.aux, f"Missing {k} in prediction.aux"
             feats.append(self._aux_feat_to_nchw(prediction.aux[k], device))
 
-        logits = self.seg_head(feats, H, W)                # [N,K,H,W]
+        logits = self.motion_head(feats, H, W)                # [N,K,H,W]
         mask = torch.argmax(logits, dim=1)                 # [N,H,W]
 
         prediction.motion_seg_logits = logits
@@ -151,17 +158,20 @@ class SegDA3(nn.Module):
     @torch.no_grad()
     def inference(self, image, **kwargs):
         """
-        完全走官方 API inference（主体输出不改），只额外挂 motion seg。
-        你原来的 demo 用 image=，这里也用 image=。
+        在推理过程(需要所有其他头的输出)使用inferrence;
+        由于只训练 motion_head,所以这里inferrence需要返回motion_head的输出
+        Args:
+            images: [B, N, 3, H, W] Tensor, normalized (ImageNet mean/std)
+        Returns:
+            prediction: DepthAnything3.Prediction  包含 motion_seg_logits / motion_seg_mask
         """
-        device = next(self.seg_head.parameters()).device
+        device = next(self.motion_head.parameters()).device
 
         output = self.da3.inference(
             image=image,
             export_feat_layers=self.export_feat_layers,
         )
 
-        # 额外 head（只有 head 在 device 上跑）
         self._run_motion_head(output, device)
 
         return output
@@ -170,7 +180,7 @@ class SegDA3(nn.Module):
         """
         在训练过程(只训练特定任务头)中使用forward; 
         在推理过程(需要所有其他头的输出)使用inferrence;
-        由于只训练 seg_head,所以这里forward只需要返回seg_head的logits
+        由于只训练 motion_head,所以这里forward只需要返回seg_head的logits
         Args:
             images: [B, N, 3, H, W] Tensor, normalized (ImageNet mean/std)
         Returns:
@@ -178,7 +188,6 @@ class SegDA3(nn.Module):
                 num_classes: motion segmentation classes = 2 (moving / static)
 
         """
-        # 输入图片的tensor维度检查 
         # [B, N, 3, H, W]
         if image.ndim != 5: 
             logger.error(f"Input image must be 5-D Tensor [B, N, 3, H, W], got {image.shape}")
@@ -192,7 +201,7 @@ class SegDA3(nn.Module):
         with torch.no_grad():
             # 为什么要用 with torch.no_grad()：
             # 显存优化：DA3 Large 参数量巨大，如果不加这个，PyTorch 会记录每一层的激活值用于求导，普通显卡会立刻 OOM（显存溢出）。
-            # 职责分离：我们相信预训练好的 DA3 提取特征的能力，所以“冻结”它，只让权重在 seg_head 里流动。
+            # 职责分离：我们相信预训练好的 DA3 提取特征的能力，所以“冻结”它，只让权重在 motion_head 里流动。
             out = self.da3.model(
                 image, 
                 export_feat_layers=self.export_feat_layers
@@ -215,7 +224,7 @@ class SegDA3(nn.Module):
 
         # 4. 运行分割头
         # 此时 feats 里的每个 Tensor 都是 [Batch_total, Feat_Dim, h, w]
-        logits = self.seg_head(feats, H, W) # 返回 [B*N, 2, H, W]
+        logits = self.motion_head(feats, H, W) # 返回 [B*N, 2, H, W]
         
         return logits
         

@@ -30,8 +30,8 @@ IMG_PATHS = [
 ]
 
 
-SAVE_PATH = "/home/zhouyi/repo/SegDA3/outputs"
-ckpt_path = "/home/zhouyi/repo/SegDA3/checkpoints/SegDA3/model.pth"
+SAVE_PATH = "/home/zhouyi/repo//output"
+ckpt_path = "/home/zhouyi/repo/checkpoint/SegDA3/model.pth"
 # ===========================================
 
 
@@ -40,7 +40,7 @@ def main():
 
     # 1) 加载模型（新 SegDA3 内部自己 from_pretrained + 冻结 DA3）
     print("Loading model...")
-    model = SegDA3(seg_head_ckpt_path=ckpt_path
+    model = SegDA3(motion_head_ckpt_path=ckpt_path
                     ).to(device)
 
     # 2) 推理（主体走 API inference：depth/processed_images/aux 都是 API 原样）
