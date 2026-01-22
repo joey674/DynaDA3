@@ -10,27 +10,27 @@ from depth_anything_3.utils.visualize import visualize_depth
 # ================= config =================
 # UKA
 # IMG_PATHS = [
-#     "/home/zhouyi/repo/dataset/UKA1/Case1Part1_1cropped/cropped_000956.jpg",
-#     "/home/zhouyi/repo/dataset/UKA1/Case1Part1_1cropped/cropped_000957.jpg",
-#     "/home/zhouyi/repo/dataset/UKA1/Case1Part1_1cropped/cropped_000958.jpg",
-#     "/home/zhouyi/repo/dataset/UKA1/Case1Part1_1cropped/cropped_000959.jpg",
-#     "/home/zhouyi/repo/dataset/UKA1/Case1Part1_1cropped/cropped_000960.jpg",
+#     "/home/zhouyi/repo/dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000956.jpg",
+#     "/home/zhouyi/repo/dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000957.jpg",
+#     "/home/zhouyi/repo/dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000958.jpg",
+#     "/home/zhouyi/repo/dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000959.jpg",
+#     "/home/zhouyi/repo/dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000960.jpg",
 # ]
 # 2077scene1
 IMG_PATHS = [ 
-    "/home/zhouyi/repo/dataset/2077/scene1/000005.jpg",
-    "/home/zhouyi/repo/dataset/2077/scene1/000006.jpg",
-    "/home/zhouyi/repo/dataset/2077/scene1/000007.jpg",
-    "/home/zhouyi/repo/dataset/2077/scene1/000008.jpg",
-    "/home/zhouyi/repo/dataset/2077/scene1/000009.jpg", 
-    "/home/zhouyi/repo/dataset/2077/scene1/000010.jpg", 
-    "/home/zhouyi/repo/dataset/2077/scene1/000011.jpg", 
-    "/home/zhouyi/repo/dataset/2077/scene1/000012.jpg", 
-    "/home/zhouyi/repo/dataset/2077/scene1/000013.jpg", 
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000005.jpg",
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000006.jpg",
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000007.jpg",
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000008.jpg",
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000009.jpg", 
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000010.jpg", 
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000011.jpg", 
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000012.jpg", 
+    "/home/zhouyi/repo/dataset/2077/2077_scene1/000013.jpg", 
 ]
 
 
-SAVE_PATH = "/home/zhouyi/repo/SegDA3/outputs/SegDA3_eval.png"
+SAVE_PATH = "/home/zhouyi/repo/SegDA3/outputs"
 ckpt_path = "/home/zhouyi/repo/SegDA3/checkpoints/SegDA3/model.pth"
 # ===========================================
 
@@ -103,10 +103,10 @@ def main():
             axes[2, i].set_title("Motion Mask (Extra Head)", fontsize=12, loc="left")
 
     # 6) 保存
+    save_filename = os.path.join(SAVE_PATH, "SegDA3_eval_" + os.path.dirname(IMG_PATHS[0]).split("/")[-1] + ".png")
     os.makedirs(os.path.dirname(SAVE_PATH), exist_ok=True)
-    plt.savefig(SAVE_PATH, bbox_inches="tight", dpi=150)
-    print(f"Result saved to {SAVE_PATH}")
-
+    plt.savefig(save_filename, bbox_inches="tight", dpi=150)
+    print(f"Result saved to {save_filename}")
 
 if __name__ == "__main__":
     main()
