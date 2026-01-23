@@ -11,8 +11,6 @@ import numpy as np
 from tqdm import tqdm
 from torch.cuda.amp import autocast, GradScaler
 from SegDA3_model import SegDA3
-
-# [新增: 引入日志和时间相关库]
 import logging
 import time
 import json
@@ -31,7 +29,8 @@ CONFIG = {
     # Training Hyperparameters
     "learning_rate": 1e-4, 
     "epochs": 1,
-    "batch_size": 1, 
+    "batch_size": 1,
+    "samples_per_epoch": 10000, # 由于帧长度随机采样, 每个 epoch 包含多少个样本可以自定义
     # System Configuration
     "num_workers": 4,
 }
@@ -72,34 +71,47 @@ def get_logger(log_dir, model_name):
 
 # ================= dataset =================
 class MultiVideoDataset(Dataset):
-    def __init__(self, video_dirs, input_size=(518, 518), seq_range=(2, 5)):
+    def __init__(self, video_dirs, samples_per_epoch, seq_range, input_size=(518, 518)):
+        """
+        Args:
+            video_dirs: 包含视频/场景子文件夹的路径列表
+            samples_per_epoch: 虚拟的数据集长度，决定了一个 Epoch 训练多少个 step
+            input_size: 图片大小
+            seq_range: (min, max) 每次随机抽取的图片数量范围
+        """
         self.input_size = input_size
         self.seq_min, self.seq_max = seq_range
-        self.samples = []
+        self.samples_per_epoch = samples_per_epoch
+        self.video_pools = [] # 存储每个文件夹的图片列表
 
+        print("Scanning video directories...")
         for v_dir in video_dirs:
             img_dir = os.path.join(v_dir, "images")
             mask_dir = os.path.join(v_dir, "masks")
             
             if not (os.path.exists(img_dir) and os.path.exists(mask_dir)):
-                print(f"Skipping: {v_dir} (missing folders)")
                 continue
 
             v_imgs = sorted(glob.glob(os.path.join(img_dir, "*")))
             v_masks = sorted(glob.glob(os.path.join(mask_dir, "*")))
 
-            if len(v_imgs) < self.seq_max:
+            # 过滤掉图片太少的文件夹
+            if len(v_imgs) < self.seq_min:
+                print(f"Skipping {v_dir}: not enough images ({len(v_imgs)} < {self.seq_min})")
                 continue
-
-            for i in range(len(v_imgs) - self.seq_max + 1):
-                self.samples.append({
-                    "imgs": v_imgs,
-                    "masks": v_masks,
-                    "start": i
-                })
+            
+            # 确保存储的是对应关系正确的列表
+            self.video_pools.append({
+                "imgs": v_imgs,
+                "masks": v_masks,
+                "count": len(v_imgs)
+            })
         
-        # [修改: 这里用 print 即可，或者也可以传 logger 进来记录]
-        print(f"Dataset initialized: {len(self.samples)} samples.")
+        if len(self.video_pools) == 0:
+            raise ValueError("No valid video folders found!")
+
+        print(f"Dataset initialized. Found {len(self.video_pools)} video folders.")
+        print(f"Virtual Epoch Length: {self.samples_per_epoch}")
 
         self.img_transform = transforms.Compose([
             transforms.ToTensor(),
@@ -107,17 +119,41 @@ class MultiVideoDataset(Dataset):
         ])
 
     def __len__(self):
-        return len(self.samples)
+        # 欺骗 DataLoader，告诉它我们有这么多数据
+        # 这样 tqdm 进度条就会显示 samples_per_epoch 的长度
+        return self.samples_per_epoch
 
     def __getitem__(self, idx):
-        s = self.samples[idx]
-        start = s["start"]
-        n = random.randint(self.seq_min, self.seq_max)
+        # idx 在这里没有实际意义，因为我们是纯随机采样
+        # 但为了保证 randomness 的多样性，我们在内部做随机
+
+        # 1. 随机选一个视频文件夹 (场景)
+        # 也可以根据 weights=video['count'] 来加权，让图片多的文件夹被选中的概率大一点
+        video_data = random.choice(self.video_pools)
         
+        total_imgs = video_data['count']
+        
+        # 2. 随机确定这次要抽几张图 (N)
+        # 也就是 min(用户上限, 该文件夹实际图片数)
+        current_seq_max = min(self.seq_max, total_imgs)
+        n = random.randint(self.seq_min, current_seq_max)
+
+        # 3. 从该文件夹的所有索引中，无放回地随机抽取 n 个索引
+        # random.sample 能保证取出的索引不重复
+        indices = random.sample(range(total_imgs), n)
+        
+        # [可选] 如果你还是希望保留时间顺序(从小到大)，可以 uncomment 下面这行：
+        # indices.sort() 
+        # 虽然你说不需要顺序，但对于 Motion 任务，通常按时间排序更符合物理规律，
+        # 不过既然你的模型是 Summation 融合，乱序确实没影响。
+
         clip_imgs, clip_masks = [], []
-        for i in range(start, start + n):
-            img = Image.open(s["imgs"][i]).convert('RGB').resize(self.input_size, Image.BILINEAR)
-            mask = Image.open(s["masks"][i]).resize(self.input_size, Image.NEAREST)
+        for i in indices:
+            img_path = video_data["imgs"][i]
+            mask_path = video_data["masks"][i]
+
+            img = Image.open(img_path).convert('RGB').resize(self.input_size, Image.BILINEAR)
+            mask = Image.open(mask_path).resize(self.input_size, Image.NEAREST)
             
             mask_arr = np.array(mask)
             if mask_arr.max() > 1: mask_arr = (mask_arr > 128).astype(int)
@@ -145,7 +181,11 @@ def train():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
-    dataset = MultiVideoDataset(video_dirs=CONFIG["video_dirs"],seq_range= CONFIG["seq_range"])
+    dataset = MultiVideoDataset(
+        video_dirs=CONFIG["video_dirs"],
+        samples_per_epoch=CONFIG["samples_per_epoch"], 
+        seq_range=CONFIG["seq_range"]
+    )
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=CONFIG["num_workers"], pin_memory=True)
 
     logger.info(f"Dataset loaded. Total batches per epoch: {len(dataloader)}")
