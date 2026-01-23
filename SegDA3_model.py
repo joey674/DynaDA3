@@ -14,6 +14,18 @@ DA3_VITG_CKPT_PATH = "/home/zhouyi/repo/checkpoint/DA3-GIANT-1.1"
 DA3_VITL_CKPT_PATH = "/home/zhouyi/repo/checkpoint/DA3-LARGE-1.1"
 MOTIONDPT_EMBED_DIM = 256
 
+MODEL_CONFIGS = {
+    'vitl': {
+        'channels': DA3_VITL_CHANNELS,
+        'feat_layers': DA3_VITL_FEAT_LAYERS,
+        'ckpt_path': DA3_VITL_CKPT_PATH
+    },
+    'vitg': {
+        'channels': DA3_VITG_CHANNELS,
+        'feat_layers': DA3_VITG_FEAT_LAYERS,
+        'ckpt_path': DA3_VITG_CKPT_PATH
+    }
+}
 
 class MotionDPT(nn.Module):
     """
@@ -27,7 +39,8 @@ class MotionDPT(nn.Module):
         c_embed: 嵌入维度 (MOTIONDPT_EMBED_DIM)
         feat_layers: 从 DA3 提取的特征层索引列表 (例如 [3, 9, 15, 21, 27, 33, 39])
     """
-    def __init__(self, c_in=DA3_VITL_CHANNELS, c_embed=MOTIONDPT_EMBED_DIM, feat_layers=()):
+    # [修改默认参数: 去除默认的 DA3_VITL_CHANNELS, 避免混淆, 由外部传入]
+    def __init__(self, c_in, c_embed=MOTIONDPT_EMBED_DIM, feat_layers=()):
         super().__init__()
         self.feat_layers = list(feat_layers)# 选择哪些 Transformer 层的特征用于分割头
 
@@ -88,37 +101,40 @@ class SegDA3(nn.Module):
     """
     def __init__(
         self,
-        export_feat_layers=DA3_VITL_FEAT_LAYERS,
-        motion_head_ckpt_path: str = None,
+        model_name: str = 'vitl', # 'vitl' or 'vitg'
+        motion_head_ckpt_path: str = None, # 训练好的 motion head 权重路径; 注意只有在训练时才可以不输入该参数
     ):
         super().__init__()
 
-        print(f"Loading DA3 from local path: {DA3_VITL_CKPT_PATH}...")
-        self.da3 = DepthAnything3.from_pretrained(DA3_VITL_CKPT_PATH)
+        if model_name not in MODEL_CONFIGS:
+            raise ValueError(f"model_name must be one of {list(MODEL_CONFIGS.keys())}")
+        
+        config = MODEL_CONFIGS[model_name]
+        ckpt_path = config['ckpt_path']
+        channels = config['channels']
+        self.export_feat_layers = list(config['feat_layers'])
+
+        print(f"Loading DA3 ({model_name}) from local path: {ckpt_path}...")
+        self.da3 = DepthAnything3.from_pretrained(ckpt_path)
 
         # 冻结 DA3
         for p in self.da3.parameters():
             p.requires_grad = False
         self.da3.eval()
 
-        self.export_feat_layers = list(export_feat_layers)
-
         self.motion_head = MotionDPT(
+            c_in=channels,
             feat_layers=range(len(self.export_feat_layers)),
         )
 
         if motion_head_ckpt_path:
-            print(f"Loading trained head from {motion_head_ckpt_path}...")
+            print(f"Loading motion head from {motion_head_ckpt_path}...")
             # 加载权重到内存
             state_dict = torch.load(motion_head_ckpt_path, map_location='cpu')
-            
-            # strict=False 可以避免因为 DA3 内部一些非训练参数不一致导致的报错 只要 motion_head 的 key 匹配即可
-            missing_keys, unexpected_keys = self.load_state_dict(state_dict, strict=False)
-            
-            # 检查 motion_head 是否加载成功
-            head_keys = [k for k in missing_keys if 'motion_head' in k]
-            if len(head_keys) > 0:
-                raise ValueError("Failed to load motion_head weights.")
+            missing_keys, _ = self.motion_head.load_state_dict(state_dict, strict=True)
+            if len(missing_keys) > 0:
+                raise ValueError(f"Failed to load motion_head weights. Missing: {missing_keys}")
+
         
     @staticmethod
     def _aux_feat_to_nchw(feat: np.ndarray, device: torch.device) -> torch.Tensor:
@@ -222,4 +238,3 @@ class SegDA3(nn.Module):
         logits = self.motion_head(feats, H, W) #  [B*N, 2, H, W]
         
         return logits
-        

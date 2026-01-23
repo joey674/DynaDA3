@@ -16,7 +16,21 @@ from depth_anything_3.utils.visualize import visualize_depth
 #     "/home/zhouyi/repo/dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000959.jpg",
 #     "/home/zhouyi/repo/dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000960.jpg",
 # ]
+
 # 2077scene1
+# IMG_PATHS = [ 
+#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000005.jpg",
+#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000006.jpg",
+#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000007.jpg",
+#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000008.jpg",
+#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000009.jpg", 
+#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000010.jpg", 
+#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000011.jpg", 
+#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000012.jpg", 
+#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000013.jpg", 
+# ]
+
+# wildgs-slam
 IMG_PATHS = [ 
     "/home/zhouyi/repo/dataset/2077/2077_scene1/000005.jpg",
     "/home/zhouyi/repo/dataset/2077/2077_scene1/000006.jpg",
@@ -31,7 +45,7 @@ IMG_PATHS = [
 
 
 SAVE_PATH = "/home/zhouyi/repo/output"
-ckpt_path = "/home/zhouyi/repo/checkpoint/SegDA3/motion_head.pth"
+ckpt_path = "/home/zhouyi/repo/checkpoint/SegDA3-LARGE-1.1/motion_head.pth"
 # ===========================================
 
 
@@ -40,8 +54,10 @@ def main():
 
     # 加载模型
     print("Loading model...")
-    model = SegDA3(motion_head_ckpt_path=ckpt_path
-                    ).to(device)
+    model = SegDA3(
+        model_name='vitl', 
+        motion_head_ckpt_path=ckpt_path
+    ).to(device)
 
     # 推理
     print("Running inference...")

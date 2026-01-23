@@ -35,4 +35,7 @@ temp*.png
 /outputs
 /inputs
 /checkpoints
+/checkpoint
+/log
+
 
