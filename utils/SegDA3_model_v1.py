@@ -27,47 +27,6 @@ MODEL_CONFIGS = {
     }
 }
 
-class GatedRefinementUnit(nn.Module):
-    """
-    门控精炼单元 (Gated Refinement Unit)
-    用于融合特征与置信度图, 通过门控机制增强重要特征
-    """
-    def __init__(self, in_channels):
-        super().__init__()
-        # [特征变换分支]
-        self.feature_conv = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(in_channels),
-            nn.ReLU(inplace=True)
-        )
-        # [门控生成分支: 输入 (Feature + Conf)]
-        self.gate_conv = nn.Sequential(
-            nn.Conv2d(in_channels + 1, in_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(in_channels),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channels, in_channels, kernel_size=1),
-            nn.Sigmoid() # [输出 0~1 门控信号]
-        )
-        # [最终融合]
-        self.final_conv = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
-
-    def forward(self, x, conf):
-        # x: [B, C, H, W], conf: [B, 1, H, W]
-        # [确保置信度分辨率与特征一致]
-        if conf.shape[-2:] != x.shape[-2:]:
-            conf = F.interpolate(conf, size=x.shape[-2:], mode='bilinear', align_corners=False)
-        
-        x_transformed = self.feature_conv(x)
-        
-        # [拼接特征与置信度生成 Gate]
-        gate_input = torch.cat([x, conf], dim=1)
-        gate = self.gate_conv(gate_input)
-        
-        # [软注意力机制 + 残差连接]
-        gated_feat = x_transformed * gate
-        out = x + self.final_conv(gated_feat)
-        return out
-
 class MotionDPT(nn.Module):
     """
     Motion DPT 
@@ -80,7 +39,8 @@ class MotionDPT(nn.Module):
         c_embed: 嵌入维度 (MOTIONDPT_EMBED_DIM)
         feat_layers: 从 DA3 提取的特征层索引列表 (例如 [3, 9, 15, 21, 27, 33, 39])
     """
-    def __init__(self, c_in, feat_layers, c_embed=MOTIONDPT_EMBED_DIM):
+    # [修改默认参数: 去除默认的 DA3_VITL_CHANNELS, 避免混淆, 由外部传入]
+    def __init__(self, c_in, c_embed=MOTIONDPT_EMBED_DIM, feat_layers=()):
         super().__init__()
         self.feat_layers = list(feat_layers)# 选择哪些 Transformer 层的特征用于分割头
 
@@ -94,9 +54,6 @@ class MotionDPT(nn.Module):
             ]
         )
 
-        # 初始化门控模块
-        self.gated_refine = GatedRefinementUnit(c_embed)
-
         num_classes = 2  # 运动分割类别数：移动 / 静止
         self.output_layer = nn.Sequential(
             nn.Conv2d(c_embed, c_embed // 2, kernel_size=3, padding=1),
@@ -105,15 +62,7 @@ class MotionDPT(nn.Module):
             nn.Conv2d(c_embed // 2, num_classes, kernel_size=1),
         )
 
-    def forward(self, features: list[torch.Tensor], H: int, W: int, conf: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            features: List[[N, c_in, h, w]]
-            H, W: 原始输入图像分辨率
-            conf: 置信度图 Tensor, shape: [N, 1, H, W]
-        Returns:
-            logits: 运动分割 logits, shape: [N, num_classes, H, W]
-        """
+    def forward(self, features: list[torch.Tensor], H: int, W: int) -> torch.Tensor:
         # features:  [N, c_in, h, w]
         selected_feat_layers = [features[i] for i in self.feat_layers]
 
@@ -136,8 +85,6 @@ class MotionDPT(nn.Module):
         fused = 0
         for x in proj:
             fused = fused + x
-
-        fused = self.gated_refine(fused, conf)
 
         # 输出层 [N, c_embed, h, w] => [N, c_embed/2, h, w]
         # 融合后的特征通过一个小型卷积网络进行最后的预测
@@ -175,7 +122,6 @@ class SegDA3(nn.Module):
             p.requires_grad = False
         self.da3.eval()
 
-        # 初始化 MotionDPT 
         self.motion_head = MotionDPT(
             c_in=channels,
             feat_layers=range(len(self.export_feat_layers)),
@@ -183,6 +129,7 @@ class SegDA3(nn.Module):
 
         if motion_head_ckpt_path:
             print(f"Loading motion head from {motion_head_ckpt_path}...")
+            # 加载权重到内存
             state_dict = torch.load(motion_head_ckpt_path, map_location='cpu')
             missing_keys, _ = self.motion_head.load_state_dict(state_dict, strict=True)
             if len(missing_keys) > 0:
@@ -190,15 +137,14 @@ class SegDA3(nn.Module):
 
         
     @staticmethod
-    def _nhwc_to_nchw(feat: np.ndarray, device: torch.device) -> torch.Tensor:
+    def _aux_feat_to_nchw(feat: np.ndarray, device: torch.device) -> torch.Tensor:
         """
-          feat shape: [N, h, w, C]  
+          feat shape: [N, h, w, C]  (例如 5,28,36,1024)
         Returns:
           torch.Tensor [N, C, h, w] on device
         """
-        assert isinstance(feat, np.ndarray), f"feat must be numpy, got {type(feat)}"
-        assert feat.ndim == 4, f"feat must be [N,h,w,C], got {feat.shape}"
-        
+        assert isinstance(feat, np.ndarray), f"aux feat must be numpy, got {type(feat)}"
+        assert feat.ndim == 4, f"aux feat must be [N,h,w,C], got {feat.shape}"
         t = torch.from_numpy(feat).to(device=device, dtype=torch.float32)     # [N,h,w,C]
         t = t.permute(0, 3, 1, 2).contiguous()                               # [N,C,h,w]
         return t
@@ -207,22 +153,23 @@ class SegDA3(nn.Module):
         """
         从 prediction.aux 取特征，跑 motion_head 写回 prediction.motion_seg_logits/motion_seg_mask
         """
+        assert hasattr(prediction, "aux") and isinstance(prediction.aux, dict), "prediction.aux missing"
+
         # 用 processed_images 的分辨率作为最终输出 H,W
+        assert prediction.processed_images is not None
         H, W = prediction.processed_images.shape[1], prediction.processed_images.shape[2]
 
         # 按 export_feat_layers 的顺序组织 feature list
         feats = []
         for layer in self.export_feat_layers:
             k = f"feat_layer_{layer}"
-            feats.append(self._nhwc_to_nchw(prediction.aux[k], device))
+            assert k in prediction.aux, f"Missing {k} in prediction.aux"
+            feats.append(self._aux_feat_to_nchw(prediction.aux[k], device))
 
-        # 处理 conf, prediction.conf [N, H, W]]
-        assert hasattr(prediction, "conf"), "prediction.conf missing"
-        conf_np = prediction.conf # [N, H, W]
-        conf_tensor = torch.from_numpy(conf_np).to(device=device, dtype=torch.float32).unsqueeze(1) # [N, H, W] -> [N, 1, H, W]
+        
 
-        logits = self.motion_head(feats, H, W, conf=conf_tensor)   # [N,K,H,W]
-        mask = torch.argmax(logits, dim=1) # [N,H,W]
+        logits = self.motion_head(feats, H, W)                # [N,K,H,W]
+        mask = torch.argmax(logits, dim=1)                 # [N,H,W]
 
         prediction.motion_seg_logits = logits
         prediction.motion_seg_mask = mask
@@ -239,14 +186,14 @@ class SegDA3(nn.Module):
         """
         device = next(self.motion_head.parameters()).device
 
-        output = self.da3.inference(
+        da3_output = self.da3.inference(
             image=image,
             export_feat_layers=self.export_feat_layers,
         )
 
-        self._run_motion_head(output, device)
+        self._run_motion_head(da3_output, device)
 
-        return output
+        return da3_output
 
     def forward(self, image):
         """
@@ -268,25 +215,28 @@ class SegDA3(nn.Module):
 
         # 冻结 DA3 并提取特征
         with torch.no_grad():
-            out = self.da3.model(
+            da3_output = self.da3.model(
                 image, 
-                export_feat_layers=self.export_feat_layers,
+                export_feat_layers=self.export_feat_layers
             )
 
-        # feat_layers特征处理
+        # 特征处理
         feats = [] 
         for layer in self.export_feat_layers:
-            feat = out['aux'][f"feat_layer_{layer}"]  # 原始 Shape: [B, N, h, w, C]
-            _, _, h, w, C = feat.shape
-            feat = feat.view(B * N, h, w, C) # 合并B,N: [B, N, h, w, C] -> [B*N, h, w, C]
-            feat = feat.permute(0, 3, 1, 2).contiguous()# 调整顺序 channel first: [B*N, h, w, C] -> [B*N, C, h, w] 
+            feat = da3_output['aux'][f"feat_layer_{layer}"]  # 原始 Shape: [B, N, h, w, Feat_Dim]
+            
+            # 不管 N 是多少，直接把 B 和 N 合并; 因为分割头（DPTHead）是基于 2D 卷积的，它不认识序列维度 N
+            _, _, h, w, Feat_Dim = feat.shape
+            
+            # [B, N, h, w, Feat_Dim] -> [B*N, h, w, Feat_Dim]
+            feat = feat.view(B * N, h, w, Feat_Dim)
+
+            # [B*N, h, w, Feat_Dim] -> [B*N, Feat_Dim, h, w] (Channel-First 适配卷积层)
+            feat = feat.permute(0, 3, 1, 2).contiguous()
             feats.append(feat)
 
-        # conf 处理 (注意 da3的forward不输出conf, 只输出depth_conf)
-        conf = out['depth_conf'] # [B, N, H, W] 
-        conf = conf.view(B * N, 1, H, W) # [B, N, H, W] -> [B*N, 1, H, W]
-
-        # feats: List[[B*N, C, h, w]];  conf: [B*N, 1, H, W] 
-        logits = self.motion_head(feats, H, W, conf=conf) #  logits: [B*N, 2, H, W]
+        # 运行分割头
+        # 此时 feats 里的每个 Tensor 都是 [Batch_total, Feat_Dim, h, w]
+        logits = self.motion_head(feats, H, W) #  [B*N, 2, H, W]
         
         return logits

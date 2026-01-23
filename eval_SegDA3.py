@@ -73,29 +73,24 @@ def main():
           type(pred.depth),
           getattr(pred.depth, "shape", None),
           getattr(pred.depth, "dtype", None))
+    print("conf:",
+          type(pred.conf),
+          getattr(pred.conf, "shape", None),
+          getattr(pred.conf, "dtype", None))
     print("aux keys:",
           list(pred.aux.keys()) if hasattr(pred, "aux") and isinstance(pred.aux, dict) else None)
     print("======================")
 
     # 准备数据
-    images = pred.processed_images  # numpy uint8, [N,H,W,3]
-    if images is None:
-        raise RuntimeError("pred.processed_images is None")
-    if images.ndim == 4 and images.shape[1] == 3:
-        # [N,3,H,W]
-        images = images.transpose(0, 2, 3, 1)
-
+    images = pred.processed_images  # numpy uint8, [N,3,H,W]
     depths = pred.depth  # numpy [N,H,W]
-    if not isinstance(depths, np.ndarray):
-        raise RuntimeError(f"pred.depth is not numpy: {type(depths)}")
-
-    # motion mask 是 torch
+    confs = pred.conf  # numpy [N,H,W]
     masks = pred.motion_seg_mask.detach().cpu().numpy()  # [N,H,W]
 
     # 绘图
     print("Plotting...")
     num_imgs = len(IMG_PATHS)
-    fig, axes = plt.subplots(3, num_imgs, figsize=(3 * num_imgs, 9))
+    fig, axes = plt.subplots(4, num_imgs, figsize=(3 * num_imgs, 12))
     plt.subplots_adjust(wspace=0.1, hspace=0.1)
 
     for i in range(num_imgs):
@@ -108,12 +103,18 @@ def main():
         axes[1, i].imshow(depth_vis)
         axes[1, i].axis("off")
         if i == 0:
-            axes[1, i].set_title("Depth Prediction (DA3 API)", fontsize=12, loc="left")
+            axes[1, i].set_title("Depth Prediction (DA3)", fontsize=12, loc="left")
 
-        axes[2, i].imshow(masks[i], cmap="jet", interpolation="nearest", vmin=0, vmax=1)
+        conf_map = confs[i] 
+        axes[2, i].imshow(conf_map, cmap="inferno", vmin=0.0, vmax=15) 
         axes[2, i].axis("off")
         if i == 0:
-            axes[2, i].set_title("Motion Mask (Extra Head)", fontsize=12, loc="left")
+            axes[2, i].set_title("Confidence Map (DA3)", fontsize=12)
+
+        axes[3, i].imshow(masks[i], cmap="jet", interpolation="nearest", vmin=0, vmax=1)
+        axes[3, i].axis("off")
+        if i == 0:
+            axes[3, i].set_title("Motion Mask (motion Head)", fontsize=12, loc="left")
 
     # 保存
     save_filename = os.path.join(SAVE_PATH, "SegDA3_eval_" + os.path.dirname(IMG_PATHS[0]).split("/")[-1] + ".png")

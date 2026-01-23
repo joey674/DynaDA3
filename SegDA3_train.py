@@ -30,7 +30,7 @@ CONFIG = {
     "learning_rate": 1e-4, 
     "epochs": 1,
     "batch_size": 1,
-    "samples_per_epoch": 10000, # 由于帧长度随机采样, 每个 epoch 包含多少个样本可以自定义
+    "samples_per_epoch": 10, # 由于帧长度随机采样, 每个 epoch 包含多少个样本可以自定义
     # System Configuration
     "num_workers": 4,
 }
@@ -170,11 +170,9 @@ class MultiVideoDataset(Dataset):
 def train():
     os.makedirs(CONFIG["save_dir"], exist_ok=True)
     
-    # [新增: 初始化 Logger]
+    # 初始化 Logger
     logger, log_file_path = get_logger(CONFIG["log_dir"], CONFIG["model_name"])
     print(f"Training log will be saved to: {log_file_path}")
-    
-    # [新增: 记录本次训练的配置信息]
     logger.info("================ Training Start ================")
     logger.info(f"Configuration:\n{json.dumps(CONFIG, indent=4, ensure_ascii=False)}")
     
@@ -189,8 +187,6 @@ def train():
     dataloader = DataLoader(dataset, batch_size=1, shuffle=True, num_workers=CONFIG["num_workers"], pin_memory=True)
 
     logger.info(f"Dataset loaded. Total batches per epoch: {len(dataloader)}")
-
-    # [新增: 记录模型加载开始]
     logger.info(f"Loading model: {CONFIG['model_name']}...")
     model = SegDA3(model_name=CONFIG["model_name"]).to(device)
     model.train()
@@ -203,7 +199,6 @@ def train():
     for epoch in range(CONFIG["epochs"]):
         epoch_loss = 0 
         
-        # [新增: 记录 Epoch 开始时间]
         epoch_start_time = time.time()
         logger.info(f"Epoch {epoch+1}/{CONFIG['epochs']} started.")
         

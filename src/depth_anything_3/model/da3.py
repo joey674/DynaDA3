@@ -112,11 +112,9 @@ class DepthAnything3Net(nn.Module):
             cam_token = None
 
         # backbone
-        logger.debug(f"images shape before backbone: {x.shape}")
         feats, aux_feats = self.backbone(
             x, cam_token=cam_token, export_feat_layers=export_feat_layers, ref_view_strategy=ref_view_strategy
         )
-        logger.debug(f"type of features after backbone: {type(feats)}")
         
         # feats = [[item for item in feat] for feat in feats]
         H, W = x.shape[-2], x.shape[-1]
