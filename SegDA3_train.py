@@ -20,18 +20,18 @@ from datetime import datetime
 CONFIG = {
     # Data Configuration
     "video_dirs": [
-        "/home/zhouyi/repo/dataset_segda3_train/dancer",
-        "/home/zhouyi/repo/dataset_segda3_train/wildgs_ANYmal1",
-        "/home/zhouyi/repo/dataset_segda3_train/wildgs_ANYmal2",
-        "/home/zhouyi/repo/dataset_segda3_train/wildgs_ANYmal3",
-        "/home/zhouyi/repo/dataset_segda3_train/wildgs_racket1",
-        "/home/zhouyi/repo/dataset_segda3_train/wildgs_racket2",
-        "/home/zhouyi/repo/dataset_segda3_train/wildgs_racket3",
-        "/home/zhouyi/repo/dataset_segda3_train/wildgs_racket4",
+        "../dataset_segda3_train/dancer",
+        "../dataset_segda3_train/wildgs_ANYmal1",
+        "../dataset_segda3_train/wildgs_ANYmal2",
+        "../dataset_segda3_train/wildgs_ANYmal3",
+        "../dataset_segda3_train/wildgs_racket1",
+        "../dataset_segda3_train/wildgs_racket2",
+        "../dataset_segda3_train/wildgs_racket3",
+        "../dataset_segda3_train/wildgs_racket4",
     ],
     "model_name": 'vitl', # 'vitl' or 'vitg'
-    "save_dir": "/home/zhouyi/repo/checkpoint/SegDA3-LARGE-1.1",
-    "log_dir": "/home/zhouyi/repo/log", 
+    "save_dir": "../checkpoint/SegDA3-LARGE-1.1",
+    "log_dir": "../log", 
     "seq_range": (2, 20),
     # Training Hyperparameters
     "learning_rate": 1e-4, 
@@ -184,7 +184,10 @@ def train():
     logger.info(f"Configuration:\n{json.dumps(CONFIG, indent=4, ensure_ascii=False)}")
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    logger.info(f"Using device: {device}")
+    if device.type == 'cuda':
+            props = torch.cuda.get_device_properties(device)
+            logger.info(f"Using device: {device} (Name: {props.name}, Memory: {props.total_memory / (1024**3):.2f} GB)")
+
 
     dataset = MultiVideoDataset(
         video_dirs=CONFIG["video_dirs"],

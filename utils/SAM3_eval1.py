@@ -15,10 +15,10 @@ from PIL import Image  # 核心：全流程使用 PIL
 # ==============================================================================
 # static settings
 # ==============================================================================
-video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_racket1"
+video_path = "../dataset/wildgs-slam/wildgs_racket1"
 text_prompt = "person . racket"
 
-output_dir = "/home/zhouyi/repo/SegDA3/inputs"
+output_dir = "../SegDA3/inputs"
 # ==============================================================================
 # setup
 # ==============================================================================

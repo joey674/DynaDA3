@@ -16,10 +16,10 @@ from PIL import Image  # 全程使用 PIL
 # ==============================================================================
 # 1. 设置 Settings
 # ==============================================================================
-video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_racket1"
+video_path = "../dataset/wildgs-slam/wildgs_racket1"
 text_prompts = ["person", "racket"] 
 
-output_dir = "/home/zhouyi/repo/dataset_segda3_train"
+output_dir = "../dataset_segda3_train"
 # ==============================================================================
 # 2. 初始化 Setup
 # ==============================================================================

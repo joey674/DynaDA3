@@ -10,42 +10,42 @@ from depth_anything_3.utils.visualize import visualize_depth
 # ================= config =================
 # UKA
 # IMG_PATHS = [
-#     "/home/zhouyi/repo/dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000956.jpg",
-#     "/home/zhouyi/repo/dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000957.jpg",
-#     "/home/zhouyi/repo/dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000958.jpg",
-#     "/home/zhouyi/repo/dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000959.jpg",
-#     "/home/zhouyi/repo/dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000960.jpg",
+#     "../dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000956.jpg",
+#     "../dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000957.jpg",
+#     "../dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000958.jpg",
+#     "../dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000959.jpg",
+#     "../dataset/UKA/UKA1/Case1Part1_1cropped/cropped_000960.jpg",
 # ]
 
 # 2077scene1
 # IMG_PATHS = [ 
-#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000005.jpg",
-#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000006.jpg",
-#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000007.jpg",
-#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000008.jpg",
-#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000009.jpg", 
-#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000010.jpg", 
-#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000011.jpg", 
-#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000012.jpg", 
-#     "/home/zhouyi/repo/dataset/2077/2077_scene1/000013.jpg", 
+#     "../dataset/2077/2077_scene1/000005.jpg",
+#     "../dataset/2077/2077_scene1/000006.jpg",
+#     "../dataset/2077/2077_scene1/000007.jpg",
+#     "../dataset/2077/2077_scene1/000008.jpg",
+#     "../dataset/2077/2077_scene1/000009.jpg", 
+#     "../dataset/2077/2077_scene1/000010.jpg", 
+#     "../dataset/2077/2077_scene1/000011.jpg", 
+#     "../dataset/2077/2077_scene1/000012.jpg", 
+#     "../dataset/2077/2077_scene1/000013.jpg", 
 # ]
 
 # wildgs-slam
 IMG_PATHS = [ 
-    "/home/zhouyi/repo/dataset/2077/2077_scene1/000005.jpg",
-    "/home/zhouyi/repo/dataset/2077/2077_scene1/000006.jpg",
-    "/home/zhouyi/repo/dataset/2077/2077_scene1/000007.jpg",
-    "/home/zhouyi/repo/dataset/2077/2077_scene1/000008.jpg",
-    "/home/zhouyi/repo/dataset/2077/2077_scene1/000009.jpg", 
-    "/home/zhouyi/repo/dataset/2077/2077_scene1/000010.jpg", 
-    "/home/zhouyi/repo/dataset/2077/2077_scene1/000011.jpg", 
-    "/home/zhouyi/repo/dataset/2077/2077_scene1/000012.jpg", 
-    "/home/zhouyi/repo/dataset/2077/2077_scene1/000013.jpg", 
+    "../dataset/2077/2077_scene1/000005.jpg",
+    "../dataset/2077/2077_scene1/000006.jpg",
+    "../dataset/2077/2077_scene1/000007.jpg",
+    "../dataset/2077/2077_scene1/000008.jpg",
+    "../dataset/2077/2077_scene1/000009.jpg", 
+    "../dataset/2077/2077_scene1/000010.jpg", 
+    "../dataset/2077/2077_scene1/000011.jpg", 
+    "../dataset/2077/2077_scene1/000012.jpg", 
+    "../dataset/2077/2077_scene1/000013.jpg", 
 ]
 
 
-SAVE_PATH = "/home/zhouyi/repo/output"
-ckpt_path = "/home/zhouyi/repo/checkpoint/SegDA3-LARGE-1.1/motion_head.pth"
+SAVE_PATH = "../output"
+ckpt_path = "../checkpoint/SegDA3-LARGE-1.1/motion_head.pth"
 # ===========================================
 
 

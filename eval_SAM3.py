@@ -16,31 +16,31 @@ from PIL import Image
 # static settings
 # ==============================================================================
 # wildgs_racket1
-# video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_racket1"
+# video_path = "../dataset/wildgs-slam/wildgs_racket1"
 # text_prompts = ["person", "racket"] 
 # wildgs_racket2
-# video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_racket2"
+# video_path = "../dataset/wildgs-slam/wildgs_racket2"
 # text_prompts = ["person", "racket"] 
 # # wildgs_racket3
-# video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_racket3"
+# video_path = "../dataset/wildgs-slam/wildgs_racket3"
 # text_prompts = ["person", "racket"] 
 # # wildgs_racket4
-# video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_racket4"
+# video_path = "../dataset/wildgs-slam/wildgs_racket4"
 # text_prompts = ["person", "racket"] 
 # # wildgs_ANYmala1
-# video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_ANYmal1"
+# video_path = "../dataset/wildgs-slam/wildgs_ANYmal1"
 # text_prompts = ["red robot with four legs"] 
 # # wildgs_ANYmala2
-# video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_ANYmal2"
+# video_path = "../dataset/wildgs-slam/wildgs_ANYmal2"
 # text_prompts = ["red robot with four legs"] 
 # wildgs_ANYmala3
-# video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_ANYmal3"
+# video_path = "../dataset/wildgs-slam/wildgs_ANYmal3"
 # text_prompts = ["red robot with four legs"] 
-video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_ANYmal3"
+video_path = "../dataset/wildgs-slam/wildgs_ANYmal3"
 text_prompts = ["red robot with four legs"] 
 
 
-output_dir = "/home/zhouyi/repo/dataset_segda3_train"
+output_dir = "../dataset_segda3_train"
 
 # ==============================================================================
 # setup
