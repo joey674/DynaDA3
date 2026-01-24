@@ -34,39 +34,55 @@ class GatedRefinementUnit(nn.Module):
     """
     def __init__(self, in_channels):
         super().__init__()
+        
+        conf_patch_size=14
+        self.conf_channels = conf_patch_size * conf_patch_size
+
         # [特征变换分支]
         self.feature_conv = nn.Sequential(
             nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),
             nn.BatchNorm2d(in_channels),
             nn.ReLU(inplace=True)
         )
-        # [门控生成分支: 输入 (Feature + Conf)]
+        # 门控生成分支: 输入 (Feature + Conf)
+        # 修改: 输入通道数变为 in_channels + self.conf_channels
         self.gate_conv = nn.Sequential(
-            nn.Conv2d(in_channels + 1, in_channels, kernel_size=3, padding=1),
+            nn.Conv2d(in_channels + self.conf_channels, in_channels, kernel_size=3, padding=1),
             nn.BatchNorm2d(in_channels),
             nn.ReLU(inplace=True),
             nn.Conv2d(in_channels, in_channels, kernel_size=1),
-            nn.Sigmoid() # [输出 0~1 门控信号]
+            nn.Sigmoid() # 输出 0~1 门控信号
         )
-        # [最终融合]
+        # 最终融合
         self.final_conv = nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1)
 
-    def forward(self, x, conf):
-        # x: [B, C, H, W], conf: [B, 1, H, W]
-        # [确保置信度分辨率与特征一致]
-        if conf.shape[-2:] != x.shape[-2:]:
-            conf = F.interpolate(conf, size=x.shape[-2:], mode='bilinear', align_corners=False)
+    def forward(self, feat, conf):
+        """
+        feat: [B, c_embed, h, w], 
+        conf: [B, 1, H, W]
+        """
         
-        x_transformed = self.feature_conv(x)
+        #  转换conf格式使其与feat对应: [B, 1, H, W] => [B, 196, h, w] 
+        B, C, h, w = feat.shape
+        _, _, H, W = conf.shape
+        patch_h, patch_w = H // h, W // w
+        conf_reshaped = conf.view(B, 1, h, patch_h, w, patch_w)
+        conf_permuted = conf_reshaped.permute(0, 1, 3, 5, 2, 4)
+        conf = conf_permuted.reshape(B, -1, h, w)
+
+        # 将feat特征解耦
+        feat_transformed = self.feature_conv(feat)
         
-        # [拼接特征与置信度生成 Gate]
-        gate_input = torch.cat([x, conf], dim=1)
+        # 拼接feat与conf生成新向量, 输入gate层 同时学feat和conf两种语义; gate最终会输出0-1, 融合两种语义进行统一输出
+        gate_input = torch.cat([feat, conf], dim=1)
         gate = self.gate_conv(gate_input)
         
-        # [软注意力机制 + 残差连接]
-        gated_feat = x_transformed * gate
-        out = x + self.final_conv(gated_feat)
-        return out
+        # 将feat与门控相乘, 使得门控生效(gate=0由于乘法的缘故就会直接抑制; gate=1就不影响)
+        gated_feat = feat_transformed * gate
+
+        # 残差链接 (提升稳定性)
+        output = feat + self.final_conv(gated_feat)
+        return output
 
 class MotionDPT(nn.Module):
     """
@@ -137,6 +153,7 @@ class MotionDPT(nn.Module):
         for x in proj:
             fused = fused + x
 
+        # 门控 fused: [N, c_embed, h, w] conf: [N, c_embed, H, W] (conf将在内部展开)
         fused = self.gated_refine(fused, conf)
 
         # 输出层 [N, c_embed, h, w] => [N, c_embed/2, h, w]
@@ -285,6 +302,7 @@ class SegDA3(nn.Module):
         # conf 处理 (注意 da3的forward不输出conf, 只输出depth_conf)
         conf = out['depth_conf'] # [B, N, H, W] 
         conf = conf.view(B * N, 1, H, W) # [B, N, H, W] -> [B*N, 1, H, W]
+        
 
         # feats: List[[B*N, C, h, w]];  conf: [B*N, 1, H, W] 
         logits = self.motion_head(feats, H, W, conf=conf) #  logits: [B*N, 2, H, W]

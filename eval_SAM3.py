@@ -34,11 +34,13 @@ from PIL import Image
 # video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_ANYmal2"
 # text_prompts = ["red robot with four legs"] 
 # wildgs_ANYmala3
+# video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_ANYmal3"
+# text_prompts = ["red robot with four legs"] 
 video_path = "/home/zhouyi/repo/dataset/wildgs-slam/wildgs_ANYmal3"
 text_prompts = ["red robot with four legs"] 
 
 
-output_dir = "/home/zhouyi/repo/output"
+output_dir = "/home/zhouyi/repo/dataset_segda3_train"
 
 # ==============================================================================
 # setup

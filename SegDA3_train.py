@@ -21,6 +21,13 @@ CONFIG = {
     # Data Configuration
     "video_dirs": [
         "/home/zhouyi/repo/dataset_segda3_train/dancer",
+        "/home/zhouyi/repo/dataset_segda3_train/wildgs_ANYmal1",
+        "/home/zhouyi/repo/dataset_segda3_train/wildgs_ANYmal2",
+        "/home/zhouyi/repo/dataset_segda3_train/wildgs_ANYmal3",
+        "/home/zhouyi/repo/dataset_segda3_train/wildgs_racket1",
+        "/home/zhouyi/repo/dataset_segda3_train/wildgs_racket2",
+        "/home/zhouyi/repo/dataset_segda3_train/wildgs_racket3",
+        "/home/zhouyi/repo/dataset_segda3_train/wildgs_racket4",
     ],
     "model_name": 'vitl', # 'vitl' or 'vitg'
     "save_dir": "/home/zhouyi/repo/checkpoint/SegDA3-LARGE-1.1",
@@ -28,9 +35,9 @@ CONFIG = {
     "seq_range": (2, 20),
     # Training Hyperparameters
     "learning_rate": 1e-4, 
-    "epochs": 1,
-    "batch_size": 1,
-    "samples_per_epoch": 10, # 由于帧长度随机采样, 每个 epoch 包含多少个样本可以自定义
+    "epochs": 50,
+    "batch_size": 1, # 固定为1
+    "samples_per_epoch": 10000, # 由于帧长度随机采样, 每个 epoch 包含多少个样本可以自定义
     # System Configuration
     "num_workers": 4,
 }
