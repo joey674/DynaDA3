@@ -19,30 +19,30 @@ from depth_anything_3.utils.visualize import visualize_depth
 # ]
 
 # 2077scene1
-IMG_PATHS = [ 
-    "../dataset/2077/2077_scene1/000005.jpg",
-    "../dataset/2077/2077_scene1/000006.jpg",
-    "../dataset/2077/2077_scene1/000007.jpg",
-    "../dataset/2077/2077_scene1/000008.jpg",
-    "../dataset/2077/2077_scene1/000009.jpg", 
-    "../dataset/2077/2077_scene1/000010.jpg", 
-    "../dataset/2077/2077_scene1/000011.jpg", 
-    "../dataset/2077/2077_scene1/000012.jpg", 
-    "../dataset/2077/2077_scene1/000013.jpg", 
-]
+# IMG_PATHS = [ 
+#     "../dataset/2077/2077_scene1/000005.jpg",
+#     "../dataset/2077/2077_scene1/000006.jpg",
+#     "../dataset/2077/2077_scene1/000007.jpg",
+#     "../dataset/2077/2077_scene1/000008.jpg",
+#     "../dataset/2077/2077_scene1/000009.jpg", 
+#     "../dataset/2077/2077_scene1/000010.jpg", 
+#     "../dataset/2077/2077_scene1/000011.jpg", 
+#     "../dataset/2077/2077_scene1/000012.jpg", 
+#     "../dataset/2077/2077_scene1/000013.jpg", 
+# ]
 
 # wildgs-slam AnYmal test
-# IMG_PATHS = [ 
-#     "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00601.png",
-#     "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00606.png",
-#     "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00611.png",
-#     "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00616.png",
-#     "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00621.png",
-#     "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00626.png",
-#     "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00631.png",
-#     "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00636.png",
-#     "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00641.png",
-# ]
+IMG_PATHS = [ 
+    "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00601.png",
+    "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00606.png",
+    "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00611.png",
+    "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00616.png",
+    "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00621.png",
+    "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00626.png",
+    "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00631.png",
+    "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00636.png",
+    "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00641.png",
+]
 
 # # wildgs-slam racket test
 # IMG_PATHS = [ 
@@ -71,7 +71,7 @@ IMG_PATHS = [
 
 
 SAVE_PATH = "../output"
-ckpt_path = "../checkpoint/DynaDA3-LARGE-1.1/motion_head.pth"
+ckpt_path = "../checkpoint/DynaDA3-LARGE-1.1/uncertainty_head.pth"
 # ===========================================
 
 
@@ -198,10 +198,12 @@ def main():
         else:
             axes[2, i].set_title(f"min {frame_min:.3f}, max {frame_max:.3f}", fontsize=10)
 
-        axes[3, i].imshow(masks[i], cmap="jet", interpolation="nearest", vmin=0, vmax=1)
+        # binary uncertainty mask: white = uncertain, black = certain
+        mask_bw = (masks[i] > 0).astype(np.uint8)
+        axes[3, i].imshow(mask_bw, cmap="gray", interpolation="nearest", vmin=0, vmax=1)
         axes[3, i].axis("off")
         if i == 0:
-            axes[3, i].set_title("Motion Mask (motion Head)", fontsize=12, loc="left")
+            axes[3, i].set_title("Uncertainty Mask (white=uncertain)", fontsize=12, loc="left")
 
     # 保存（文件名加入日期时间，例如 0129_1139）
     dt_str = datetime.now().strftime("%m%d_%H%M")

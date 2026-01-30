@@ -32,12 +32,12 @@ CONFIG = {
     "model_name": 'vitl', # 'vitl' or 'vitg'
     "save_dir": "../checkpoint/DynaDA3-LARGE-1.1",
     "log_dir": "../log", 
-    "seq_range": (2, 20),
+    "seq_range": (5, 10),
     # Training Hyperparameters
     "learning_rate": 1e-4, 
     "epochs": 10,
     "batch_size": 1, # 固定为1
-    "samples_per_epoch": 100, # 由于帧长度随机采样, 每个 epoch 包含多少个样本可以自定义
+    "samples_per_epoch": 50, # 由于帧长度随机采样, 每个 epoch 包含多少个样本可以自定义
     # System Configuration
     "num_workers": 4,
 }

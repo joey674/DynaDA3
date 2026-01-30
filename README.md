@@ -9,6 +9,9 @@ output
 DynaDA3
 DynaDA3-SLAM
 
+## trainning
+unzip DynaDA3-main.zip 
+
 ## dataset
 ### SAM3 for dataset:
 conda create -n sam3 python=3.12

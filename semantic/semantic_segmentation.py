@@ -94,44 +94,44 @@ load_checkpoint(model, head_checkpoint_url, map_location="cpu")
 model.cuda()
 model.eval()
 ########################################
-# load sample image
-import urllib
+# # load sample image
+# import urllib
 
-from PIL import Image
-
-
-def load_image_from_url(url: str) -> Image:
-    with urllib.request.urlopen(url) as f:
-        return Image.open(f).convert("RGB")
+# from PIL import Image
 
 
-EXAMPLE_IMAGE_URL = "https://dl.fbaipublicfiles.com/dinov2/images/example.jpg"
+# def load_image_from_url(url: str) -> Image:
+#     with urllib.request.urlopen(url) as f:
+#         return Image.open(f).convert("RGB")
 
 
-image = load_image_from_url(EXAMPLE_IMAGE_URL)
+# EXAMPLE_IMAGE_URL = "https://dl.fbaipublicfiles.com/dinov2/images/example.jpg"
 
-# ########################################
-# run segmentation
-import numpy as np
 
-import dinov2.eval.segmentation.utils.colormaps as colormaps
+# image = load_image_from_url(EXAMPLE_IMAGE_URL)
 
-DATASET_COLORMAPS = {
-    "ade20k": colormaps.ADE20K_COLORMAP,
-    "voc2012": colormaps.VOC2012_COLORMAP,
-}
+# # ########################################
+# # run segmentation
+# import numpy as np
 
-def render_segmentation(segmentation_logits, dataset):
-    colormap = DATASET_COLORMAPS[dataset]
-    colormap_array = np.array(colormap, dtype=np.uint8)
-    segmentation_values = colormap_array[segmentation_logits + 1]
-    return Image.fromarray(segmentation_values)
+# import dinov2.eval.segmentation.utils.colormaps as colormaps
 
-array = np.array(image)[:, :, ::-1] # BGR
-segmentation_logits = inference_segmentor(model, array)[0]
-segmented_image = render_segmentation(segmentation_logits, HEAD_DATASET)
-segmented_image.save("segmented.png")
-print("saved segmented.png")
+# DATASET_COLORMAPS = {
+#     "ade20k": colormaps.ADE20K_COLORMAP,
+#     "voc2012": colormaps.VOC2012_COLORMAP,
+# }
+
+# def render_segmentation(segmentation_logits, dataset):
+#     colormap = DATASET_COLORMAPS[dataset]
+#     colormap_array = np.array(colormap, dtype=np.uint8)
+#     segmentation_values = colormap_array[segmentation_logits + 1]
+#     return Image.fromarray(segmentation_values)
+
+# array = np.array(image)[:, :, ::-1] # BGR
+# segmentation_logits = inference_segmentor(model, array)[0]
+# segmented_image = render_segmentation(segmentation_logits, HEAD_DATASET)
+# segmented_image.save("segmented.png")
+# print("saved segmented.png")
 
 ########################################
 import dinov2.eval.segmentation_m2f.models.segmentors

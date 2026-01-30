@@ -1,3 +1,4 @@
+from pyexpat import features
 import numpy as np
 import torch
 import torch.nn as nn
@@ -12,7 +13,7 @@ DA3_VITG_FEAT_LAYERS=(21, 27, 33, 39)
 DA3_VITL_FEAT_LAYERS=(11, 15, 19, 23)
 DA3_VITG_CKPT_PATH = "../checkpoint/DA3-GIANT-1.1"
 DA3_VITL_CKPT_PATH = "../checkpoint/DA3-LARGE-1.1"
-uncertaintyDPT_EMBED_DIM = 256
+DPT_EMBED_DIM = 256
 
 MODEL_CONFIGS = {
     'vitl': {
@@ -38,46 +39,38 @@ class UncertaintyDPT(nn.Module):
         c_in: DINO输入通道数 (DA3_CHANNELS = 1536)
         c_embed: 嵌入维度 (uncertaintyDPT_EMBED_DIM)
         feat_layers: 从 DA3 提取的指定特征层索引列表
-        feats: DA3 backbone 指定层输出特征列表, 每个元素 shape: [N, c_in, h, w]
+        feats: DA3 backbone 指定层输出特征列表 (接口保留, 当前不使用), 每个元素 shape: [N, c_in, h, w]
         conf: 置信度图, shape: [N, 1, H, W]
         depth: 深度图, shape: [N, 1, H, W]
     """
-    def __init__(self, c_in, feat_layers, c_embed=uncertaintyDPT_EMBED_DIM):
+    def __init__(self, c_in, feat_layers, c_embed=DPT_EMBED_DIM):
         super().__init__()
-        self.feat_layers = list(feat_layers)
-        self.c_embed = c_embed
-        
-        # [针对不同层的特征进行维度压缩，准备融合]
-        self.projects = nn.ModuleList([
-            nn.Conv2d(c_in, c_embed, kernel_size=1) for _ in range(len(feat_layers))
-        ])
-        
-        # [几何特征提取器：处理 Depth 和 Conf]
-        # [输入 2 通道 (depth + conf), 输出嵌入维度]
+        self.feat_layers = list(feat_layers)# 选择哪些 Transformer 层的特征用于分割头
+
+        self.projects_layer = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv2d(c_in, c_embed, kernel_size=1),# 1x1 卷积: 用于将原始高维特征(如 1024 维)降维到统一的 embed_dim（如 256 维），减少计算量。
+                    nn.ReLU(inplace=True),
+                )
+                for _ in range(len(self.feat_layers))# 这个投影层有并行的N个卷积模块, 每个对应处理不同特征层出来的特征
+            ]
+        )
+
+        # 几何特征头：显式交互 (1-conf, depth, (1-conf)*depth, |∇depth|)
         self.geo_head = nn.Sequential(
-            nn.Conv2d(2, 32, kernel_size=3, padding=1),
+            nn.Conv2d(4, 32, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
-            nn.Conv2d(32, c_embed, kernel_size=1)
+            nn.Conv2d(32, c_embed, kernel_size=1),
         )
 
-        # [融合与细化模块]
-        self.fusion_conv = nn.Sequential(
-            nn.Conv2d(c_embed * 2, c_embed, kernel_size=3, padding=1),
-            nn.BatchNorm2d(c_embed),
-            nn.ReLU(inplace=True)
-        )
-
-        # [逐级细化头 (Refine Head)]
-        self.refine = nn.Sequential(
+        num_classes = 2  # 运动分割类别数：移动 / 静止
+        self.output_layer = nn.Sequential(
             nn.Conv2d(c_embed, c_embed // 2, kernel_size=3, padding=1),
-            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
+            nn.BatchNorm2d(c_embed // 2),
             nn.ReLU(inplace=True),
-            nn.Conv2d(c_embed // 2, c_embed // 4, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True)
+            nn.Conv2d(c_embed // 2, num_classes, kernel_size=1),
         )
-
-        # [最终输出层：分类为 2 类 (运动/静止)]
-        self.classifier = nn.Conv2d(c_embed // 4, 2, kernel_size=1)
 
     def forward(
         self,
@@ -89,30 +82,34 @@ class UncertaintyDPT(nn.Module):
     ) -> torch.Tensor:
         """
         Args:
-            feats: List[[N, c_in, h, w]]
+            feats: List[[N, c_in, h, w]] (接口保留, 当前不使用)
             conf: 置信度图 Tensor, shape: [N, 1, H, W]
             depth: 深度图 Tensor, shape: [N, 1, H, W]
         Returns:
             logits: 运动分割 logits, shape: [N, num_classes, H, W]
         """
-        N = conf.shape[0]
+        # 仅使用 depth/conf 作为输入特征 + 显式交互
+        conf_inv = 1.0 - conf
+        depth_min = depth.amin(dim=(2, 3), keepdim=True)
+        depth_max = depth.amax(dim=(2, 3), keepdim=True)
+        depth_norm = (depth - depth_min) / (depth_max - depth_min + 1e-6)
 
-        # 1. [处理 Backbone 最后一层最强的语义特征]
-        x = self.projects[-1](feats[-1]) # [N, c_embed, h, w]
-        x = F.interpolate(x, size=(H, W), mode='bilinear', align_corners=True)
+        # 简单的深度梯度强度 (|∇depth|)
+        grad_x = torch.abs(depth_norm[:, :, :, 1:] - depth_norm[:, :, :, :-1])
+        grad_y = torch.abs(depth_norm[:, :, 1:, :] - depth_norm[:, :, :-1, :])
+        depth_grad = F.pad(grad_x, (0, 1, 0, 0)) + F.pad(grad_y, (0, 0, 0, 1))
 
-        # 2. [提取几何先验 (深度 + 置信度)]
-        # [将深度和置信度拼接，通过 geo_head 映射到特征空间]
-        geo_input = torch.cat([depth, conf], dim=1) # [N, 2, H, W]
-        geo_feat = self.geo_head(geo_input) # [N, c_embed, H, W]
+        geo_input = torch.cat(
+            [conf_inv, depth_norm, conf_inv * depth_norm, depth_grad], dim=1
+        )  # [N, 4, H, W]
+        fused = self.geo_head(geo_input)  # [N, c_embed, H, W]
 
-        # 3. [特征融合：语义 (Backbone) + 几何 (Depth/Conf)]
-        combined = torch.cat([x, geo_feat], dim=1) # [N, c_embed*2, H, W]
-        combined = self.fusion_conv(combined)
-
-        # 4. [细化输出]
-        out = self.refine(combined) # [N, c_embed//4, H, W]
-        logits = self.classifier(out) # [N, 2, H, W]
+        # 输出层 [N, c_embed, h, w] => [N, c_embed/2, h, w]
+        # 融合后的特征通过一个小型卷积网络进行最后的预测
+        # 3x3 卷积 + BN + ReLU: 用于平滑特征，消除由于插值（Interpolation）产生的伪影，并进一步提取局部特征
+        # 1x1 卷积: 最终投影到 2 通道，得到每个类别的置信度分数（Logits）
+        logits = self.output_layer(fused) 
+        logits = F.interpolate(logits, size=(H, W), mode="bilinear", align_corners=False) 
         return logits
 
 
