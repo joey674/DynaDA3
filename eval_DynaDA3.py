@@ -82,7 +82,7 @@ def main():
     print("Loading model...")
     model = DynaDA3(
         model_name='vitl', 
-        # uncertainty_head_ckpt_path=ckpt_path
+        uncertainty_head_ckpt_path=ckpt_path
     ).to(device)
 
     # 推理

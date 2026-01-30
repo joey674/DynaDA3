@@ -38,39 +38,50 @@ class UncertaintyDPT(nn.Module):
         c_in: DINO输入通道数 (DA3_CHANNELS = 1536)
         c_embed: 嵌入维度 (uncertaintyDPT_EMBED_DIM)
         feat_layers: 从 DA3 提取的指定特征层索引列表
-        features: DA3 backbone 指定层输出特征列表, 每个元素 shape: [N, c_in, h, w]
+        feats: DA3 backbone 指定层输出特征列表, 每个元素 shape: [N, c_in, h, w]
         conf: 置信度图, shape: [N, 1, H, W]
         depth: 深度图, shape: [N, 1, H, W]
     """
     def __init__(self, c_in, feat_layers, c_embed=uncertaintyDPT_EMBED_DIM):
         super().__init__()
-        self.feat_layers = list(feat_layers)# 选择哪些 DINO 层的特征用于分割头
+        self.feat_layers = list(feat_layers)
         self.c_embed = c_embed
-
-        # 将每层特征映射到统一的 embedding 维度
-        self.feat_projs = nn.ModuleList(
-            [nn.Conv2d(c_in, c_embed, kernel_size=1) for _ in self.feat_layers]
+        
+        # [针对不同层的特征进行维度压缩，准备融合]
+        self.projects = nn.ModuleList([
+            nn.Conv2d(c_in, c_embed, kernel_size=1) for _ in range(len(feat_layers))
+        ])
+        
+        # [几何特征提取器：处理 Depth 和 Conf]
+        # [输入 2 通道 (depth + conf), 输出嵌入维度]
+        self.geo_head = nn.Sequential(
+            nn.Conv2d(2, 32, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, c_embed, kernel_size=1)
         )
 
-        # 融合 conf/depth 与特征（在高分辨率 H,W 上）
-        self.fuse_layer = nn.Sequential(
-            nn.Conv2d(c_embed + 2, c_embed, kernel_size=3, padding=1),
+        # [融合与细化模块]
+        self.fusion_conv = nn.Sequential(
+            nn.Conv2d(c_embed * 2, c_embed, kernel_size=3, padding=1),
             nn.BatchNorm2d(c_embed),
-            nn.ReLU(inplace=True),
+            nn.ReLU(inplace=True)
         )
 
-
-        num_classes = 2  # 运动分割类别数：移动 / 静止
-        self.output_layer = nn.Sequential(
+        # [逐级细化头 (Refine Head)]
+        self.refine = nn.Sequential(
             nn.Conv2d(c_embed, c_embed // 2, kernel_size=3, padding=1),
-            nn.BatchNorm2d(c_embed // 2),
+            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True),
             nn.ReLU(inplace=True),
-            nn.Conv2d(c_embed // 2, num_classes, kernel_size=1),
+            nn.Conv2d(c_embed // 2, c_embed // 4, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True)
         )
+
+        # [最终输出层：分类为 2 类 (运动/静止)]
+        self.classifier = nn.Conv2d(c_embed // 4, 2, kernel_size=1)
 
     def forward(
         self,
-        features: list[torch.Tensor],
+        feats: list[torch.Tensor],
         H: int,
         W: int,
         conf: torch.Tensor,
@@ -78,30 +89,30 @@ class UncertaintyDPT(nn.Module):
     ) -> torch.Tensor:
         """
         Args:
-            features: List[[N, c_in, h, w]]
-            H, W: 原始输入图像分辨率
+            feats: List[[N, c_in, h, w]]
             conf: 置信度图 Tensor, shape: [N, 1, H, W]
             depth: 深度图 Tensor, shape: [N, 1, H, W]
         Returns:
             logits: 运动分割 logits, shape: [N, num_classes, H, W]
         """
-        assert len(features) == len(self.feat_projs), (
-            f"features length {len(features)} != feat_projs length {len(self.feat_projs)}"
-        )
+        N = conf.shape[0]
 
-        # 1) 投影并融合 DA3 特征 (低分辨率 h,w)
-        proj_feats = []
-        for feat, proj in zip(features, self.feat_projs):
-            proj_feats.append(proj(feat))
-        fused_feat = torch.stack(proj_feats, dim=0).mean(dim=0)  # [N, c_embed, h, w]
+        # 1. [处理 Backbone 最后一层最强的语义特征]
+        x = self.projects[-1](feats[-1]) # [N, c_embed, h, w]
+        x = F.interpolate(x, size=(H, W), mode='bilinear', align_corners=True)
 
-        # 2) 上采样到 H,W 后与 conf/depth 融合
-        fused_feat = F.interpolate(fused_feat, size=(H, W), mode="bilinear", align_corners=False)
-        fused_feat = torch.cat([fused_feat, conf, depth], dim=1)  # [N, c_embed+2, H, W]
-        fused_feat = self.fuse_layer(fused_feat)  # [N, c_embed, H, W]
+        # 2. [提取几何先验 (深度 + 置信度)]
+        # [将深度和置信度拼接，通过 geo_head 映射到特征空间]
+        geo_input = torch.cat([depth, conf], dim=1) # [N, 2, H, W]
+        geo_feat = self.geo_head(geo_input) # [N, c_embed, H, W]
 
-        # 3) 输出 logits
-        logits = self.output_layer(fused_feat)  # [N, num_classes, H, W]
+        # 3. [特征融合：语义 (Backbone) + 几何 (Depth/Conf)]
+        combined = torch.cat([x, geo_feat], dim=1) # [N, c_embed*2, H, W]
+        combined = self.fusion_conv(combined)
+
+        # 4. [细化输出]
+        out = self.refine(combined) # [N, c_embed//4, H, W]
+        logits = self.classifier(out) # [N, 2, H, W]
         return logits
 
 

@@ -35,9 +35,9 @@ CONFIG = {
     "seq_range": (2, 20),
     # Training Hyperparameters
     "learning_rate": 1e-4, 
-    "epochs": 50,
+    "epochs": 10,
     "batch_size": 1, # 固定为1
-    "samples_per_epoch": 10000, # 由于帧长度随机采样, 每个 epoch 包含多少个样本可以自定义
+    "samples_per_epoch": 100, # 由于帧长度随机采样, 每个 epoch 包含多少个样本可以自定义
     # System Configuration
     "num_workers": 4,
 }
@@ -202,7 +202,7 @@ def train():
     model.train()
     logger.info("Model loaded successfully.")
 
-    optimizer = optim.AdamW(model.motion_head.parameters(), lr=CONFIG["learning_rate"], weight_decay=0.01)
+    optimizer = optim.AdamW(model.uncertainty_head.parameters(), lr=CONFIG["learning_rate"], weight_decay=0.01)
     criterion = nn.CrossEntropyLoss()
     scaler = GradScaler()
 
@@ -261,8 +261,8 @@ def train():
         logger.info(log_msg) # 日志记录
 
         # 保存模型
-        save_path = os.path.join(CONFIG["save_dir"], "motion_head.pth")
-        torch.save(model.motion_head.state_dict(), save_path)
+        save_path = os.path.join(CONFIG["save_dir"], "uncertainty_head.pth")
+        torch.save(model.uncertainty_head.state_dict(), save_path)
         logger.info(f"Model saved to {save_path}")
 
     logger.info("================ Training Finished ================")
