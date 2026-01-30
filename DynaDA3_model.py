@@ -30,47 +30,76 @@ MODEL_CONFIGS = {
 
 class UncertaintyDPT(nn.Module):
     """
-    uncertainty DPT 
+    UncertaintyDPT 
     Args:
         B: Batch Size=1
         N: Frame Sequence Length
-        H, W: 原始输入图像分辨率 (例如 518 * 518)
-        h, w: 特征图分辨率; 对于 ViT 架构，通常 patch size 为 14, 所以 h = H/14, w = W/14 (518/14=37)
-        c_in: DINO输入通道数 (DA3_CHANNELS = 1536)
-        c_embed: 嵌入维度 (uncertaintyDPT_EMBED_DIM)
+        H, W: 原始输入图像分辨率
+        c_in: DINO输入通道数
+        c_embed: 嵌入维度
         feat_layers: 从 DA3 提取的指定特征层索引列表
-        feats: DA3 backbone 指定层输出特征列表 (接口保留, 当前不使用), 每个元素 shape: [N, c_in, h, w]
-        conf: 置信度图, shape: [N, 1, H, W]
-        depth: 深度图, shape: [N, 1, H, W]
     """
     def __init__(self, c_in, feat_layers, c_embed=DPT_EMBED_DIM):
         super().__init__()
-        self.feat_layers = list(feat_layers)# 选择哪些 Transformer 层的特征用于分割头
+        self.feat_layers = list(feat_layers)
 
+        # 投影层：将 Transformer 特征投影到 c_embed 维度
         self.projects_layer = nn.ModuleList(
             [
                 nn.Sequential(
-                    nn.Conv2d(c_in, c_embed, kernel_size=1),# 1x1 卷积: 用于将原始高维特征(如 1024 维)降维到统一的 embed_dim（如 256 维），减少计算量。
+                    nn.Conv2d(c_in, c_embed, kernel_size=1),
                     nn.ReLU(inplace=True),
                 )
-                for _ in range(len(self.feat_layers))# 这个投影层有并行的N个卷积模块, 每个对应处理不同特征层出来的特征
+                for _ in range(len(self.feat_layers))
             ]
         )
 
-        # 几何特征头：显式交互 (1-conf, depth, (1-conf)*depth, |∇depth|)
+        # 几何特征头输入通道数：
+        # 1. depth_norm (相对深度)
+        # 2. conf_norm (相对置信度)
+        # 3. |∇depth| (深度梯度)
+        # 4. heuristic_uncertainty: (1-conf_norm) * (1-depth_norm)
+        # 5. low_conf_indicator: (1-conf_norm)
+        geo_in_channels = 5
         self.geo_head = nn.Sequential(
-            nn.Conv2d(4, 32, kernel_size=3, padding=1),
+            nn.Conv2d(geo_in_channels, 32, kernel_size=3, padding=1),
             nn.ReLU(inplace=True),
             nn.Conv2d(32, c_embed, kernel_size=1),
         )
+        
+        # 融合几何特征和图像特征
+        self.fusion_layer = nn.Sequential(
+            nn.Conv2d(c_embed * 2, c_embed, kernel_size=3, padding=1),
+            nn.BatchNorm2d(c_embed),
+            nn.ReLU(inplace=True),
+        )
 
-        num_classes = 2  # 运动分割类别数：移动 / 静止
+        num_classes = 2  # 类别: 0=Certain/Static, 1=Uncertain/Dynamic
         self.output_layer = nn.Sequential(
             nn.Conv2d(c_embed, c_embed // 2, kernel_size=3, padding=1),
             nn.BatchNorm2d(c_embed // 2),
             nn.ReLU(inplace=True),
             nn.Conv2d(c_embed // 2, num_classes, kernel_size=1),
         )
+
+    def robust_normalize(self, x):
+        """
+        基于百分位数的归一化，能自适应不同的数值范围 (如 conf >= 1 的情况)
+        x: [N, 1, H, W]
+        """
+        N = x.shape[0]
+        x_flat = x.view(N, -1)
+        
+        # 计算 5% 和 95% 分位数来确定有效范围，避免极值干扰
+        q_low = torch.quantile(x_flat, 0.05, dim=1, keepdim=True).unsqueeze(-1).unsqueeze(-1)
+        q_high = torch.quantile(x_flat, 0.95, dim=1, keepdim=True).unsqueeze(-1).unsqueeze(-1)
+        
+        # 归一化到 [0, 1]
+        denom = q_high - q_low
+        denom[denom < 1e-6] = 1e-6 # 防止除零
+        
+        x_norm = (x - q_low) / denom
+        return x_norm.clamp(0.0, 1.0)
 
     def forward(
         self,
@@ -82,34 +111,60 @@ class UncertaintyDPT(nn.Module):
     ) -> torch.Tensor:
         """
         Args:
-            feats: List[[N, c_in, h, w]] (接口保留, 当前不使用)
-            conf: 置信度图 Tensor, shape: [N, 1, H, W]
-            depth: 深度图 Tensor, shape: [N, 1, H, W]
-        Returns:
-            logits: 运动分割 logits, shape: [N, num_classes, H, W]
+            feats: List[[N, c_in, h, w]] 图像特征
+            conf: 置信度图 Tensor, shape: [N, 1, H, W] (假设值越高越置信，或通过 norm 自适应)
+            depth: 深度图 Tensor, shape: [N, 1, H, W] (假设值越小越近，或通过 norm 自适应)
         """
-        # 仅使用 depth/conf 作为输入特征 + 显式交互
-        conf_inv = 1.0 - conf
-        depth_min = depth.amin(dim=(2, 3), keepdim=True)
-        depth_max = depth.amax(dim=(2, 3), keepdim=True)
-        depth_norm = (depth - depth_min) / (depth_max - depth_min + 1e-6)
+        # 1. 鲁棒归一化处理
+        # 无论原始 conf 范围是 [0,1] 还是 [1, inf)，归一化后 0=相对低值, 1=相对高值
+        conf_norm = self.robust_normalize(conf)   
+        depth_norm = self.robust_normalize(depth) 
 
-        # 简单的深度梯度强度 (|∇depth|)
+        # 2. 构造先验特征
+        # 假设:
+        # depth_norm 接近 0 -> 浅/近 (Shallow)
+        # conf_norm 接近 0 -> 低置信度 (Low Confidence)
+        # 目标: 找出 "深度浅 且 置信度低" 的区域 -> 认为是 Uncertain
+        
+        # Feature: 如果深度浅 (1.0 - depth_norm 大) 且 置信度低 (1.0 - conf_norm 大)，则该项值大
+        uncertainty_prior = (1.0 - conf_norm) * (1.0 - depth_norm)
+        
+        # Feature: 深度梯度
         grad_x = torch.abs(depth_norm[:, :, :, 1:] - depth_norm[:, :, :, :-1])
         grad_y = torch.abs(depth_norm[:, :, 1:, :] - depth_norm[:, :, :-1, :])
         depth_grad = F.pad(grad_x, (0, 1, 0, 0)) + F.pad(grad_y, (0, 0, 0, 1))
 
+        # 3. 几何分支特征提取
         geo_input = torch.cat(
-            [conf_inv, depth_norm, conf_inv * depth_norm, depth_grad], dim=1
-        )  # [N, 4, H, W]
-        fused = self.geo_head(geo_input)  # [N, c_embed, H, W]
+            [depth_norm, conf_norm, depth_grad, uncertainty_prior, (1.0 - conf_norm)], dim=1
+        )  # [N, 5, H, W]
+        geo_feat = self.geo_head(geo_input)  # [N, c_embed, H, W]
 
-        # 输出层 [N, c_embed, h, w] => [N, c_embed/2, h, w]
-        # 融合后的特征通过一个小型卷积网络进行最后的预测
-        # 3x3 卷积 + BN + ReLU: 用于平滑特征，消除由于插值（Interpolation）产生的伪影，并进一步提取局部特征
-        # 1x1 卷积: 最终投影到 2 通道，得到每个类别的置信度分数（Logits）
+        # 4. 图像特征分支处理 (融合 Backbone 特征)
+        img_feat_total = 0
+        if feats is not None and len(feats) == len(self.projects_layer):
+             for i, feat in enumerate(feats):
+                # [N, c_in, h, w] -> [N, c_embed, h, w]
+                proj = self.projects_layer[i](feat)
+                # 上采样到 [N, c_embed, H, W]
+                upsampled = F.interpolate(proj, size=(H, W), mode="bilinear", align_corners=False)
+                img_feat_total = img_feat_total + upsampled
+        
+        # 如果没有特征传入，就用全0或者只用geo_feat (此处相加处理)
+        # 融合: Geo + Image
+        # 我们这里选择 concat 然后过卷积融合，这样网络可以学习权重
+        if isinstance(img_feat_total, int): # feats is empty
+             img_feat_total = torch.zeros_like(geo_feat)
+             
+        fused = torch.cat([geo_feat, img_feat_total], dim=1) # [N, 2*c_embed, H, W]
+        fused = self.fusion_layer(fused)                     # [N, c_embed, H, W]
+
+        # 5. 输出
         logits = self.output_layer(fused) 
-        logits = F.interpolate(logits, size=(H, W), mode="bilinear", align_corners=False) 
+        # 确保输出分辨率正确 (虽然前面已经是对齐的，这里保险)
+        if logits.shape[-2:] != (H, W):
+            logits = F.interpolate(logits, size=(H, W), mode="bilinear", align_corners=False)
+            
         return logits
 
 

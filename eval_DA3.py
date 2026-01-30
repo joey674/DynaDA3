@@ -85,7 +85,7 @@ def main():
 
     print("Running inference...")
     prediction = model.inference(
-        image=image_paths,                # 你环境里参数名就是 image=
+        image=image_paths,                
         export_feat_layers=export_feat_layers,
     )
 

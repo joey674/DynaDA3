@@ -35,7 +35,7 @@ CONFIG = {
     "seq_range": (5, 10),
     # Training Hyperparameters
     "learning_rate": 1e-4, 
-    "epochs": 10,
+    "epochs": 2,
     "batch_size": 1, # 固定为1
     "samples_per_epoch": 50, # 由于帧长度随机采样, 每个 epoch 包含多少个样本可以自定义
     # System Configuration
