@@ -1,13 +1,13 @@
-# SegDA3
+# DynaDA3
 
 ## File Struct
 checkpoint
 dataset
-dataset_segda3_train
+dataset_dynada3_train
 log
 output
-SegDA3
-SegDA3-SLAM
+DynaDA3
+DynaDA3-SLAM
 
 ## dataset
 ### SAM3 for dataset:

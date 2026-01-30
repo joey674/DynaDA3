@@ -19,7 +19,7 @@ from PIL import Image  # 全程使用 PIL
 video_path = "../dataset/wildgs-slam/wildgs_racket1"
 text_prompts = ["person", "racket"] 
 
-output_dir = "../dataset_segda3_train"
+output_dir = "../dataset_dynada3_train"
 # ==============================================================================
 # 2. 初始化 Setup
 # ==============================================================================

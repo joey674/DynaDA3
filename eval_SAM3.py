@@ -40,7 +40,7 @@ video_path = "../dataset/wildgs-slam/wildgs_ANYmal3"
 text_prompts = ["red robot with four legs"] 
 
 
-output_dir = "../dataset_segda3_train"
+output_dir = "../dataset_dynada3_train"
 
 # ==============================================================================
 # setup
