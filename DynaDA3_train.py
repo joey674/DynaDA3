@@ -185,8 +185,13 @@ def train():
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if device.type == 'cuda':
-            props = torch.cuda.get_device_properties(device)
-            logger.info(f"Using device: {device} (Name: {props.name}, Memory: {props.total_memory / (1024**3):.2f} GB)")
+        device_index = torch.cuda.current_device()
+        props = torch.cuda.get_device_properties(device_index)
+        total_mem_gb = props.total_memory / (1024**3)
+        logger.info(f"Using CUDA device: cuda:{device_index} (Name: {props.name}, Memory: {total_mem_gb:.2f} GB)")
+        logger.info(f"CUDA version (torch.version.cuda): {torch.version.cuda}")
+    else:
+        logger.info(f"Using device: {device}")
 
 
     dataset = MultiVideoDataset(
