@@ -30,12 +30,10 @@ input_images*/
 .DS_Store
 
 .vscode
-src/debug_main.py
 temp*.png
 /outputs
 /inputs
-/checkpoints
 /checkpoint
 /log
-
+semantic/output
 

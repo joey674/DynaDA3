@@ -133,32 +133,7 @@ segmentation_logits = inference_segmentor(model, array)[0]
 segmented_image = render_segmentation(segmentation_logits, HEAD_DATASET)
 end_time = time.time()
 print(f"Segmentation took {end_time - start_time:.2f} seconds")
-segmented_image.save("semantic/segmented.png")
-print("saved semantic/segmented.png")
+segmented_image.save("segmented.png")
+print("saved segmented.png")
 
-########################################
-# import dinov2.eval.segmentation_m2f.models.segmentors
-# CONFIG_URL = f"{DINOV2_BASE_URL}/dinov2_vitg14/dinov2_vitg14_ade20k_m2f_config.py"
-# CHECKPOINT_URL = f"{DINOV2_BASE_URL}/dinov2_vitg14/dinov2_vitg14_ade20k_m2f.pth"
-
-# cfg_str = load_config_from_url(CONFIG_URL)
-# cfg = mmcv.Config.fromstring(cfg_str, file_format=".py")
-
-# model = init_segmentor(cfg)
-# load_checkpoint(model, CHECKPOINT_URL, map_location="cpu")
-# model.cuda()
-# model.eval()
-
-# ########################################
-# start_time = time.time()
-
-# array = np.array(image)[:, :, ::-1] # BGR
-# segmentation_logits = inference_segmentor(model, array)[0]
-# segmented_image = render_segmentation(segmentation_logits, "ade20k")
-
-# end_time = time.time()
-# print(f"Segmentation took {end_time - start_time:.2f} seconds")
-
-# segmented_image.save("segmented_m2f.png")
-# print("saved segmented_m2f.png")
 

@@ -10,22 +10,23 @@ DynaDA3
 DynaDA3-SLAM
 
 ## deploy
-Torch: 2.10.0+cu128
-CUDA: 12.8
-xFormers 0.0.34
-
+Torch: 2.0.0+cu117
+CUDA: 11.7
+xFormers 
 numpy<2
 torch>=2
+
 ### DynaDA3
 ```bash
 ### conda
 conda create -n dynada3 python=3.11
 conda activate dynada3
-### DA3
+### torch torchvision cuda numpy
 python -m pip install --extra-index-url https://download.pytorch.org/whl/cu117 \
   torch==2.0.0+cu117 torchvision==0.15.0+cu117
 python -m pip install xformers --no-deps
-
+python -m pip install "numpy<2"
+### da3 dependency
 pip install -e .
 ```
 
@@ -39,8 +40,6 @@ python -m pip install mmsegmentation==0.30.0
 # python -m pip install --force-reinstall "numpy<2"
 python -m pip install addict pyyaml yapf packaging opencv-python
 ```
-
-
 
 ### validate
 ```bash
