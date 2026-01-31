@@ -186,9 +186,16 @@ def main():
 
     # 加载模型
     print("Loading model...")
+    
+    if not os.path.exists(ckpt_path):
+        print(f"Checkpoint not found at {ckpt_path}, loading with None.")
+        uncertainty_ckpt = None
+    else:
+        uncertainty_ckpt = ckpt_path
+
     model = DynaDA3(
         model_name='vitl', 
-        uncertainty_head_ckpt_path=ckpt_path
+        uncertainty_head_ckpt_path=uncertainty_ckpt
     ).to(device)
     
     # 遍历数据集

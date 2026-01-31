@@ -19,19 +19,20 @@ import sys
 class Color:
     RED = "\033[91m"
     YELLOW = "\033[93m"
-    WHITE = "\033[97m"
+    BLUE = "\033[94m"
     GREEN = "\033[92m"
     RESET = "\033[0m"
+    PURPLE = "\033[95m"
 
 
-LOG_LEVELS = {"ERROR": 0, "WARN": 1, "INFO": 2, "DEBUG": 3}
+LOG_LEVELS = {"ERROR": 0, "WARN": 1, "INFO": 2, "VALIDATE":3, "DEBUG": 4}
 
-COLOR_MAP = {"ERROR": Color.RED, "WARN": Color.YELLOW, "INFO": Color.WHITE, "DEBUG": Color.GREEN}
+COLOR_MAP = {"ERROR": Color.RED, "WARN": Color.YELLOW, "INFO": Color.BLUE, "VALIDATE": Color.PURPLE, "DEBUG": Color.GREEN}
 
 
 def get_env_log_level():
-    level = os.environ.get("DA3_LOG_LEVEL", "INFO").upper()
-    return LOG_LEVELS.get(level, LOG_LEVELS["INFO"])
+    level = os.environ.get("DA3_LOG_LEVEL", "VALIDATE").upper()
+    return LOG_LEVELS.get(level, LOG_LEVELS["VALIDATE"])
 
 
 class Logger:
@@ -69,6 +70,9 @@ class Logger:
 
     def debug(self, *args, **kwargs):
         self.log("DEBUG:", *args, **kwargs)
+
+    def validate(self, *args, **kwargs):
+        self.log("VALIDATE:", *args, **kwargs)
 
 
 logger = Logger()

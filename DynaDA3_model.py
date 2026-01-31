@@ -14,116 +14,175 @@ DA3_VITG_FEAT_LAYERS=(21, 27, 33, 39)
 DA3_VITL_FEAT_LAYERS=(11, 15, 19, 23)
 DA3_VITG_CKPT_PATH = "../checkpoint/DA3-GIANT-1.1"
 DA3_VITL_CKPT_PATH = "../checkpoint/DA3-LARGE-1.1"
-DPT_EMBED_DIM = 256
+DPT_EMBED_DIM = 2048
 
 MODEL_CONFIGS = {
     'vitl': {
         'channels': DA3_VITL_CHANNELS,
-        'feat_layers': DA3_VITL_FEAT_LAYERS,
+        'feat_idxs': DA3_VITL_FEAT_LAYERS,
         'ckpt_path': DA3_VITL_CKPT_PATH
     },
     'vitg': {
         'channels': DA3_VITG_CHANNELS,
-        'feat_layers': DA3_VITG_FEAT_LAYERS,
+        'feat_idxs': DA3_VITG_FEAT_LAYERS,
         'ckpt_path': DA3_VITG_CKPT_PATH
     }
 }
 
 #######################################################
-# UncertaintyDPT V3.1
-# https://gemini.google.com/share/af6a5517a0e8
+# UncertaintyDPT V3.2
+# 
 #######################################################
 class UncertaintyDPT(nn.Module):
-    def __init__(self, c_in, feat_layers, c_embed=256):
+    """
+    UncertaintyDPT
+    Args:
+        B: Batch Size=1
+        N: Frame Sequence Length
+        H, W: 修正过的图像分辨率:  H=14*h, W=14*w
+        c_in: DINO 输入通道数
+        c_embed: 嵌入维度
+        feat_idxs: 从 DA3 提取的指定DINO特征层
+    """
+    def __init__(self, c_in, feat_idxs, c_embed=DPT_EMBED_DIM):
         super().__init__()
-        self.feat_layers = list(feat_layers)
-        
-        # 1x1 卷积投影
-        self.projects = nn.ModuleList([
-            nn.Sequential(
-                nn.Conv2d(c_in, c_embed, kernel_size=1),
-                nn.ReLU(inplace=True),
-            ) for _ in range(len(self.feat_layers))
-        ])
+        self.feat_idxs = list(feat_idxs)
 
-        # 几何分支改在低分辨率运行
-        self.geo_head = nn.Sequential(
-            nn.Conv2d(5, 32, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(32, c_embed, kernel_size=1),
+        # 投影层：将 DINO 特征投影到 c_embed 维度
+        self.projects_layer = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv2d(c_in, c_embed, kernel_size=1),
+                    nn.ReLU(inplace=True),
+                )
+                for _ in range(len(self.feat_idxs))
+            ]
         )
 
+        # 深度/置信度特征头输入通道数：
+        # 1. depth_norm (相对深度)
+        # 2. conf_norm (相对置信度)
+        # 3. |∇depth| (深度梯度)
+        # 4. heuristic_uncertainty: (1-conf_norm) * (1-depth_norm)
+        # 5. low_conf_indicator: (1-conf_norm)
+        self.patch_size = 14
+        geo_in_channels = 5 * (self.patch_size ** 2)
+        
+        # 将深度/置信度特征投影到 c_embed - 使用 1x1 卷积在 patch 内部混合信息
+        self.geo_head = nn.Sequential(
+            nn.Conv2d(geo_in_channels, c_embed, kernel_size=1),
+            nn.ReLU(inplace=True),
+        )
+        
+        # 融合深度/置信度特征和图像特征
         self.fusion_layer = nn.Sequential(
             nn.Conv2d(c_embed * 2, c_embed, kernel_size=3, padding=1),
             nn.BatchNorm2d(c_embed),
             nn.ReLU(inplace=True),
         )
 
+        num_classes = 2  # 类别: 0=Certain/Static, 1=Uncertain/Dynamic
         self.output_layer = nn.Sequential(
             nn.Conv2d(c_embed, c_embed // 2, kernel_size=3, padding=1),
             nn.BatchNorm2d(c_embed // 2),
             nn.ReLU(inplace=True),
-            nn.Conv2d(c_embed // 2, 2, kernel_size=1),
+            nn.Conv2d(c_embed // 2, num_classes * (self.patch_size ** 2), kernel_size=1),
+            nn.PixelShuffle(self.patch_size)
         )
-
-    def _normalize(self, x, stats_size=128):
-        """
-        加速版归一化：在低分辨率下计算分位数
-        """
-        N, C, H, W = x.shape
-        # 降采样统计
-        x_small = F.interpolate(x, size=(stats_size, stats_size), mode='area')
-        x_flat = x_small.view(N, -1)
         
-        q_low = torch.quantile(x_flat, 0.05, dim=1, keepdim=True).view(N, 1, 1, 1)
-        q_high = torch.quantile(x_flat, 0.95, dim=1, keepdim=True).view(N, 1, 1, 1)
-        
-        denom = q_high - q_low
-        return (x - q_low) / denom.clamp(min=1e-6)
-
-    def _get_depth_grad(self, x):
-        """
-        使用卷积代替切片计算梯度，减少访存
-        """
-        # 利用 F.grad 计算简单的 x,y 差分
-        kernel_x = torch.tensor([[[[0, 0, 0], [-1, 1, 0], [0, 0, 0]]]], device=x.device, dtype=x.dtype)
-        kernel_y = torch.tensor([[[[0, -1, 0], [0, 1, 0], [0, 0, 0]]]], device=x.device, dtype=x.dtype)
-        
-        grad_x = F.conv2d(x, kernel_x, padding=1)
-        grad_y = F.conv2d(x, kernel_y, padding=1)
-        return (grad_x.abs() + grad_y.abs())
-
-    def forward(self, feats, H, W, conf, depth):
-        # 1. 在原图尺度处理几何先验，但立即降采样到特征图尺度
-        # 获取特征图的目标分辨率 (h, w)
-        target_h, target_w = feats[0].shape[-2:]
-        
-        conf_norm = self._normalize(conf)
-        depth_norm = self._normalize(depth)
-        
-        # 构造先验
-        u_prior = (1.0 - conf_norm) * (1.0 - depth_norm)
-        d_grad = self._get_depth_grad(depth_norm)
-        
-        geo_raw = torch.cat([
-            depth_norm, conf_norm, d_grad, u_prior, (1.0 - conf_norm)
-        ], dim=1) # [N, 5, H, W]
-        
-        # 立即降采样到特征图尺度进行后续卷积
-        geo_small = F.interpolate(geo_raw, size=(target_h, target_w), mode='area')
-        geo_feat = self.geo_head(geo_small)
-
-        # 2. 图像特征投影 (已经在 target_h, target_w)
-        img_feat_sum = sum(proj(f) for proj, f in zip(self.projects, feats))
-
-        # 3. 低分辨率融合
-        fused = torch.cat([geo_feat, img_feat_sum], dim=1)
-        fused = self.fusion_layer(fused)
-
-        # 4. 在低分辨率完成输出转换，最后只做一次大尺寸上采样
-        logits_small = self.output_layer(fused)
-        logits = F.interpolate(logits_small, size=(H, W), mode="bilinear", align_corners=False)
+    def _geo_normalize(self, x):
+            """
+            基于百分位数的归一化，能自适应不同的数值范围 (如 conf >= 1 的情况)
+            x: [N, 1, H, W]
+            """
+            N = x.shape[0]
+            x_flat = x.view(N, -1)
             
+            # 计算 5% 和 95% 分位数来确定有效范围，避免极值干扰
+            q_low = torch.quantile(x_flat, 0.05, dim=1, keepdim=True).unsqueeze(-1).unsqueeze(-1)
+            q_high = torch.quantile(x_flat, 0.95, dim=1, keepdim=True).unsqueeze(-1).unsqueeze(-1)
+            
+            # 归一化到 [0, 1]
+            denom = q_high - q_low
+            denom[denom < 1e-6] = 1e-6 # 防止除零
+            
+            x_norm = (x - q_low) / denom
+            return x_norm.clamp(0.0, 1.0)
+
+    def _geo_preprocess(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        [N, C, H, W] -> [N, C*14*14, h, w]
+        Pixel Unshuffle: 把空间维度信息 (patch_size x patch_size) 转移到通道维度
+        """
+        logger.debug(f"Geo preprocess input shape: {x.shape}")
+        x = F.pixel_unshuffle(x, self.patch_size)
+        logger.debug(f"Geo preprocess output shape: {x.shape}")
+        return x
+
+    def forward(
+        self,
+        feats: list[torch.Tensor],
+        H: int,
+        W: int,
+        conf: torch.Tensor,
+        depth: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        构造先验特征
+        假设:
+            depth_norm 接近 0 -> 浅/近 (Shallow)
+            conf_norm 接近 0 -> 低置信度 (Low Confidence)
+        目标: 
+            找出 "深度浅 且 置信度低" 的区域 -> 认为是 Uncertain
+        Args:
+            feats: List[[N, c_in, h, w]] 图像特征
+            conf: 置信度图 Tensor, shape: [N, 1, H, W] 
+            depth: 深度图 Tensor, shape: [N, 1, H, W] 
+        """
+        # 鲁棒归一化处理
+        # 无论原始范围 归一化后到[0,1] 0=相对低值, 1=相对高值
+        conf_norm = self._geo_normalize(conf)   
+        depth_norm = self._geo_normalize(depth)
+        
+        # Feature: 深度梯度 (需在HW空间计算)
+        grad_x = torch.abs(depth_norm[:, :, :, 1:] - depth_norm[:, :, :, :-1])
+        grad_y = torch.abs(depth_norm[:, :, 1:, :] - depth_norm[:, :, :-1, :])
+        depth_grad = F.pad(grad_x, (0, 1, 0, 0)) + F.pad(grad_y, (0, 0, 0, 1))
+        
+        # 预处理: HW -> hw [N, 1, H, W] -> [N, 1*14*14, h, w]
+        depth_feat = self._geo_preprocess(depth_norm)
+        conf_feat = self._geo_preprocess(conf_norm)
+        grad_feat = self._geo_preprocess(depth_grad)
+
+        # 融合深度和深度置信度 (在 hw 空间进行计算)
+        # Feature: 如果深度浅 (1.0 - depth_norm 大) 且 置信度低 (1.0 - conf_norm 大)，则该项值大
+        uncertainty_prior = (1.0 - conf_feat) * (1.0 - depth_feat)
+        low_conf = (1.0 - conf_feat)
+
+        geo_input = torch.cat(
+            [depth_feat, conf_feat, grad_feat, uncertainty_prior, low_conf], dim=1
+        )  # [N, 5*p^2, h, w]
+        
+        # 投影到 c_embed
+        geo_feat = self.geo_head(geo_input)  # [N, c_embed, h, w]
+
+        # 融合 DINO 特征
+        img_feat_sum = None
+        for i, feat in enumerate(feats):
+            # [N, c_in, h, w] -> [N, c_embed, h, w]
+            proj = self.projects_layer[i](feat)
+            if img_feat_sum is None:
+                img_feat_sum = proj
+            else:
+                img_feat_sum = img_feat_sum + proj
+
+        # geo_feat与 img_feat 融合
+        fused = torch.cat([geo_feat, img_feat_sum], dim=1) # [N, 2*c_embed, h, w]
+        fused = self.fusion_layer(fused)                   # [N, c_embed, h, w]
+
+        # 输出 output_layer 包含 PixelShuffle, 输出将回到 [N, num_classes, H, W]
+        logits = self.output_layer(fused) 
+
         return logits
 
 
@@ -144,7 +203,7 @@ class DynaDA3(nn.Module):
         config = MODEL_CONFIGS[model_name]
         ckpt_path = config['ckpt_path']
         channels = config['channels']
-        self.export_feat_layers = list(config['feat_layers'])
+        self.export_feat_idxs = list(config['feat_idxs'])
 
         print(f"Loading DA3 ({model_name}) from local path: {ckpt_path}...")
         self.da3 = DepthAnything3.from_pretrained(ckpt_path)
@@ -157,7 +216,7 @@ class DynaDA3(nn.Module):
         # 初始化 UncertaintyDPT 
         self.uncertainty_head = UncertaintyDPT(
             c_in=channels,
-            feat_layers=range(len(self.export_feat_layers)),
+            feat_idxs=range(len(self.export_feat_idxs)),
         )
 
         if uncertainty_head_ckpt_path:
@@ -190,9 +249,9 @@ class DynaDA3(nn.Module):
         # 用 processed_images 的分辨率作为最终输出 H,W
         H, W = prediction.processed_images.shape[1], prediction.processed_images.shape[2]
 
-        # 按 export_feat_layers 的顺序组织 feature list
+        # 按 export_feat_idxs 的顺序组织 feature list
         feats = []
-        for layer in self.export_feat_layers:
+        for layer in self.export_feat_idxs:
             k = f"feat_layer_{layer}"
             feats.append(self._nhwc_to_nchw(prediction.aux[k], device))
 
@@ -231,7 +290,7 @@ class DynaDA3(nn.Module):
 
         output = self.da3.inference(
             image=image,
-            export_feat_layers=self.export_feat_layers,
+            export_feat_layers=self.export_feat_idxs,
         )
         if torch.cuda.is_available():
             torch.cuda.synchronize()
@@ -251,7 +310,10 @@ class DynaDA3(nn.Module):
         在训练过程(只训练特定任务头)中使用forward, 由于训练 uncertainty_head,所以这里forward需要返回uncertainty_head的logits; 
         在推理过程(需要所有其他头的输出)使用inferrence;
         Args:
-            images: [B, N, 3, H, W] Tensor, normalized (ImageNet mean/std)
+            images: [B, N, 3, H, W] Tensor, normalized (ImageNet mean/std) 
+                注意, 这里输入的尺寸是合法尺寸,也就是 H=14*h, W=14*w; 
+                在训练时, 由DataLoader进行裁剪; 
+                在推理时,由DA3的InputProcessor进行裁剪;
         Returns:
             logits: [B, num_classes, H, W]
                 num_classes: uncertainty segmentation classes = 2 (moving / static)
@@ -268,12 +330,12 @@ class DynaDA3(nn.Module):
         with torch.no_grad():
             out = self.da3.model(
                 image, 
-                export_feat_layers=self.export_feat_layers,
+                export_feat_layers=self.export_feat_idxs,
             )
 
         # feat_layers特征处理
         feats = [] 
-        for layer in self.export_feat_layers:
+        for layer in self.export_feat_idxs:
             feat = out['aux'][f"feat_layer_{layer}"]  # 原始 Shape: [B, N, h, w, C]
             _, _, h, w, C = feat.shape
             feat = feat.view(B * N, h, w, C) # 合并B,N: [B, N, h, w, C] -> [B*N, h, w, C]

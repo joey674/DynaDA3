@@ -65,11 +65,16 @@ python DynaDA3_eval.py
 python ./semantic/semantic_segmentation.py
 ```
 
-## model checkpoint
+## model version
 当前uncertainty_head.pth是代码会调用的ckpt;
 这个uncertainty_head.pth是最新训练的ckpt版本的复制(比如是uncertainty_headv3_stable.pth)作为当前调用的对象
 当训练新的版本时, 请把model的版本和ckpt的版本对应上保存;
 模型就保存在utils里
+```bash
+git checkout -b V3-Depth-Conf
+git fetch
+git branch --set-upstream-to=origin/V3-Depth-Conf V3-Depth-Conf
+```
 
 ## dataset
 ### SAM3 for dataset:
