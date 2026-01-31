@@ -3,6 +3,8 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 from datetime import datetime
+import gc
+from matplotlib import cm
 
 from DynaDA3_model import DynaDA3
 from depth_anything_3.utils.visualize import visualize_depth
@@ -31,38 +33,38 @@ DATASETS = {
         "../dataset/2077/2077_scene1/000012.jpg", 
         "../dataset/2077/2077_scene1/000013.jpg", 
     ],
-    "wildgs_anymal": [ 
-        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00601.png",
-        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00606.png",
-        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00611.png",
-        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00616.png",
-        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00621.png",
-        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00626.png",
-        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00631.png",
-        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00636.png",
-        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00641.png",
-    ],
-    "wildgs_racket": [ 
-        "../dataset/wildgs-slam/wildgs_racket_test/frame_00830.png",
-        "../dataset/wildgs-slam/wildgs_racket_test/frame_00840.png",
-        "../dataset/wildgs-slam/wildgs_racket_test/frame_00850.png",
-        "../dataset/wildgs-slam/wildgs_racket_test/frame_00860.png",
-        "../dataset/wildgs-slam/wildgs_racket_test/frame_00870.png",
-        "../dataset/wildgs-slam/wildgs_racket_test/frame_00880.png",
-        "../dataset/wildgs-slam/wildgs_racket_test/frame_00890.png",
-    ],
-    "wildgs_tower": [ 
-        "../dataset/wildgs-slam/wildgs_tower_test/frame_01000.png",
-        "../dataset/wildgs-slam/wildgs_tower_test/frame_01010.png",
-        "../dataset/wildgs-slam/wildgs_tower_test/frame_01020.png",
-        "../dataset/wildgs-slam/wildgs_tower_test/frame_01030.png",
-        "../dataset/wildgs-slam/wildgs_tower_test/frame_01040.png",
-        "../dataset/wildgs-slam/wildgs_tower_test/frame_01050.png",
-        "../dataset/wildgs-slam/wildgs_tower_test/frame_01060.png",
-        "../dataset/wildgs-slam/wildgs_tower_test/frame_01070.png",
-        "../dataset/wildgs-slam/wildgs_tower_test/frame_01080.png",
-        "../dataset/wildgs-slam/wildgs_tower_test/frame_01090.png",
-    ]
+#     "wildgs_anymal": [ 
+#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00601.png",
+#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00606.png",
+#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00611.png",
+#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00616.png",
+#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00621.png",
+#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00626.png",
+#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00631.png",
+#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00636.png",
+#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00641.png",
+#     ],
+#     "wildgs_racket": [ 
+#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00830.png",
+#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00840.png",
+#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00850.png",
+#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00860.png",
+#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00870.png",
+#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00880.png",
+#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00890.png",
+#     ],
+#     "wildgs_tower": [ 
+#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01000.png",
+#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01010.png",
+#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01020.png",
+#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01030.png",
+#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01040.png",
+#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01050.png",
+#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01060.png",
+#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01070.png",
+#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01080.png",
+#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01090.png",
+#     ]
 }
 
 SAVE_PATH = "../output"
@@ -109,7 +111,7 @@ def evaluate_single_dataset(model, dataset_name, img_paths, device):
     if display_vmax <= display_vmin:
         display_vmax = display_vmin + 1.0
 
-    print(f"== {dataset_name} STATS: N={N}, vmin={display_vmin:.2f}, vmax={display_vmax:.2f} ==")
+    print(f"Dataset: {dataset_name} STATS: N={N}, vmin={display_vmin:.2f}, vmax={display_vmax:.2f} ")
 
     # 绘图
     print("Plotting...")
@@ -161,7 +163,6 @@ def evaluate_single_dataset(model, dataset_name, img_paths, device):
     
     # Colorbar
     try:
-        from matplotlib import cm
         sm = cm.ScalarMappable(cmap="inferno", norm=plt.Normalize(vmin=display_vmin, vmax=display_vmax))
         sm.set_array([])
         fig.colorbar(sm, ax=axes[2, :], orientation='vertical', fraction=0.02, label='confidence')
@@ -171,6 +172,12 @@ def evaluate_single_dataset(model, dataset_name, img_paths, device):
     plt.savefig(save_filename, bbox_inches="tight", dpi=150)
     plt.close(fig) # Close plot to free memory
     print(f"Result saved to {save_filename}")
+
+    # Clean up memory
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
+
     return save_filename
 
 

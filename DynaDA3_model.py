@@ -3,6 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import time
 
 from depth_anything_3.api import DepthAnything3
 from depth_anything_3.utils.logger import logger
@@ -268,14 +269,21 @@ class DynaDA3(nn.Module):
         Returns:
             prediction: DepthAnything3.Prediction  包含 uncertainty_seg_logits / uncertainty_seg_mask
         """
+
+        t0 = time.time()
+
         device = next(self.uncertainty_head.parameters()).device
 
         output = self.da3.inference(
             image=image,
             export_feat_layers=self.export_feat_layers,
         )
+        t1 = time.time()
 
         self._run_uncertainty_head(output, device)
+        t2 = time.time()
+
+        logger.info(f"DynaDA3 Model Forward Pass Done. Total: {t2-t0:.3f}s | Backbone: {t1-t0:.3f}s | Uncertainty Head: {t2-t1:.3f}s")
 
         return output
 

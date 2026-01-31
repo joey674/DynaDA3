@@ -76,3 +76,4 @@ if __name__ == "__main__":
     
     # 调用处理函数
     crop_images_in_folder(input_folder,output_folder)
+    

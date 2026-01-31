@@ -36,3 +36,4 @@ if __name__ == "__main__":
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
     frames_to_video(input_dir, output_path, fps=30)
+    

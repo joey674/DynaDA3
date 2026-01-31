@@ -65,3 +65,4 @@ if __name__ == "__main__":
         output_folder=output_folder,
         frame_interval=30  # 每隔10帧提取一帧
     )
+    
