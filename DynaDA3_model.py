@@ -1,8 +1,16 @@
+#######################################################
+# UncertaintyDPT V4
+#######################################################
 from pyexpat import features
+import os
+import sys
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+# Add semantic/src to sys.path
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), "semantic/src"))
 
 from depth_anything_3.api import DepthAnything3
 from depth_anything_3.utils.logger import logger
@@ -29,8 +37,7 @@ MODEL_CONFIGS = {
 }
 
 #######################################################
-# UncertaintyDPT V3
-# https://gemini.google.com/share/af6a5517a0e8
+# UncertaintyDPT V4
 #######################################################
 class UncertaintyDPT(nn.Module):
     """
@@ -43,7 +50,7 @@ class UncertaintyDPT(nn.Module):
         c_embed: 嵌入维度
         feat_layers: 从 DA3 提取的指定特征层索引列表
     """
-    def __init__(self, c_in, feat_layers, c_embed=DPT_EMBED_DIM):
+    def __init__(self, c_in, feat_layers, c_embed=DPT_EMBED_DIM, semantic_config=None, semantic_ckpt=None):
         super().__init__()
         self.feat_layers = list(feat_layers)
 
@@ -86,6 +93,68 @@ class UncertaintyDPT(nn.Module):
             nn.Conv2d(c_embed // 2, num_classes, kernel_size=1),
         )
 
+        # Semantic Head Setup
+        self.use_semantic = semantic_config is not None
+        if self.use_semantic:
+            try:
+                import mmcv
+                from mmcv.runner import load_checkpoint
+                from mmseg.models import build_head
+                # Ensure dinov2_seg is available for registry if needed
+                import dinov2_seg 
+                import dinov2_seg.models
+            except ImportError as e:
+                logger.warning(f"Failed to import mmseg/mmcv dependencies: {e}. Semantic refinement disabled.")
+                self.use_semantic = False
+                return
+
+            logger.info(f"Initializing Semantic Head from {semantic_config}")
+            cfg = mmcv.Config.fromfile(semantic_config)
+            self.semantic_head = build_head(cfg.model.decode_head)
+            
+            if semantic_ckpt:
+                logger.info(f"Loading Semantic Head Checkpoint from {semantic_ckpt}")
+                # Load checkpoint potentially mapping keys if they have 'decode_head.' prefix
+                # The provided checkpoint is likely the full model state dict
+                checkpoint = torch.load(semantic_ckpt, map_location='cpu')
+                # If checkpoint is full model, extract decode_head keys
+                if 'state_dict' in checkpoint:
+                    state_dict = checkpoint['state_dict']
+                else:
+                    state_dict = checkpoint
+                
+                # Filter/Rename keys
+                new_state_dict = {}
+                for k, v in state_dict.items():
+                    if k.startswith('decode_head.'):
+                        new_state_dict[k.replace('decode_head.', '')] = v
+                    elif not k.startswith('backbone.') and k in self.semantic_head.state_dict():
+                         # Direct match fallback
+                         new_state_dict[k] = v
+                
+                if new_state_dict:
+                    missing, unexpected = self.semantic_head.load_state_dict(new_state_dict, strict=False)
+                    logger.info(f"Semantic Head Loaded. Missing: {len(missing)}, Unexpected: {len(unexpected)}")
+                else:
+                    # Try loading directly if keys match exactly (unlikely for full model ckpt)
+                    self.semantic_head.load_state_dict(state_dict, strict=False)
+
+            # Projection layer for semantic head input if channel mismatch
+            # cfg.model.decode_head.in_channels is usually a list [c, c, c, c]
+            sem_in_channels = cfg.model.decode_head.in_channels
+            if isinstance(sem_in_channels, list):
+                sem_in_c = sem_in_channels[0]
+            else:
+                sem_in_c = sem_in_channels
+            
+            if c_in != sem_in_c:
+                logger.info(f"Adding projection for semantic head: {c_in} -> {sem_in_c}")
+                self.sem_proj = nn.ModuleList([
+                    nn.Conv2d(c_in, sem_in_c, kernel_size=1) for _ in range(len(feat_layers))
+                ])
+            else:
+                self.sem_proj = None
+
     def robust_normalize(self, x):
         """
         基于百分位数的归一化，能自适应不同的数值范围 (如 conf >= 1 的情况)
@@ -105,6 +174,40 @@ class UncertaintyDPT(nn.Module):
         x_norm = (x - q_low) / denom
         return x_norm.clamp(0.0, 1.0)
 
+    def refine_with_semantic(self, uncertainty_logits, semantic_logits):
+        """
+        Use semantic segmentation to refine uncertainty mask.
+        uncertainty_logits: [N, 2, H, W]
+        semantic_logits: [N, NumClasses, H, W]
+        """
+        uncertainty_mask = torch.argmax(uncertainty_logits, dim=1) # [N, H, W] -> 0 or 1
+        semantic_mask = torch.argmax(semantic_logits, dim=1)       # [N, H, W] -> 0..K
+        
+        refined_mask = uncertainty_mask.clone()
+        
+        N, H, W = uncertainty_mask.shape
+        # Iterate over batch
+        for b in range(N):
+            u_mask = uncertainty_mask[b]
+            s_mask = semantic_mask[b]
+            
+            unique_classes = torch.unique(s_mask)
+            for cls_id in unique_classes:
+                region = (s_mask == cls_id)
+                total_pixels = region.sum()
+                if total_pixels == 0:
+                    continue
+                
+                # Check overlap with uncertainty
+                overlap = (u_mask & region).sum()
+                
+                # Heuristic: If >10% of the object is uncertain, mark the whole object as uncertain
+                # This helps fill in holes in the uncertainty mask
+                if overlap > 0 and (overlap / total_pixels) > 0.1:
+                    refined_mask[b][region] = 1
+                    
+        return refined_mask
+
     def forward(
         self,
         feats: list[torch.Tensor],
@@ -112,12 +215,14 @@ class UncertaintyDPT(nn.Module):
         W: int,
         conf: torch.Tensor,
         depth: torch.Tensor,
+        return_refined: bool = False
     ) -> torch.Tensor:
         """
         Args:
             feats: List[[N, c_in, h, w]] 图像特征
             conf: 置信度图 Tensor, shape: [N, 1, H, W] (假设值越高越置信，或通过 norm 自适应)
             depth: 深度图 Tensor, shape: [N, 1, H, W] (假设值越小越近，或通过 norm 自适应)
+            return_refined: 如果True, 返回 (logits, refined_mask, semantic_mask)
         """
         # 1. 鲁棒归一化处理
         # 无论原始 conf 范围是 [0,1] 还是 [1, inf)，归一化后 0=相对低值, 1=相对高值
@@ -169,6 +274,30 @@ class UncertaintyDPT(nn.Module):
         if logits.shape[-2:] != (H, W):
             logits = F.interpolate(logits, size=(H, W), mode="bilinear", align_corners=False)
             
+        # 6. 语义分割细化 (如果启用)
+        refined_mask = None
+        semantic_mask = None
+        if return_refined and self.use_semantic:
+            # Prepare inputs for semantic head
+            sem_inputs = []
+            for i, feat in enumerate(feats):
+                x = feat
+                if self.sem_proj:
+                    x = self.sem_proj[i](x)
+                sem_inputs.append(x)
+            
+            # Forward semantic head
+            # BNHead expects tuple(inputs)
+            sem_logits = self.semantic_head(sem_inputs)
+            # Resize semantic logits to H, W
+            sem_logits = F.interpolate(sem_logits, size=(H, W), mode="bilinear", align_corners=False)
+            
+            # Refine
+            refined_mask = self.refine_with_semantic(logits, sem_logits) # [N, H, W]
+            semantic_mask = torch.argmax(sem_logits, dim=1) # [N, H, W]
+            
+            return logits, refined_mask, semantic_mask
+            
         return logits
 
 
@@ -179,7 +308,9 @@ class DynaDA3(nn.Module):
     def __init__(
         self,
         model_name: str = 'vitl', # 'vitl' or 'vitg'
-        uncertainty_head_ckpt_path: str = None, # 训练好的 uncertainty head 权重路径; 注意只有在训练时才可以不输入该参数
+        uncertainty_head_ckpt_path: str = None, # 训练好的 uncertainty head 权重路径
+        semantic_config_path: str = "semantic/checkpoint/dinov2_vits14_voc2012_ms_config.py",
+        semantic_ckpt_path: str = "semantic/checkpoint/dinov2_vits14_voc2012_ms_head.pth",
     ):
         super().__init__()
 
@@ -198,19 +329,28 @@ class DynaDA3(nn.Module):
         for p in self.da3.parameters():
             p.requires_grad = False
         self.da3.eval()
+        
+        # Check if semantic paths exist
+        sem_conf = semantic_config_path if os.path.exists(semantic_config_path) else None
+        sem_ckpt = semantic_ckpt_path if os.path.exists(semantic_ckpt_path) else None
+        
+        if not sem_conf:
+             logger.warning(f"Semantic config not found at {semantic_config_path}, disabling refinement.")
 
         # 初始化 UncertaintyDPT 
         self.uncertainty_head = UncertaintyDPT(
             c_in=channels,
             feat_layers=range(len(self.export_feat_layers)),
+            semantic_config=sem_conf,
+            semantic_ckpt=sem_ckpt
         )
 
         if uncertainty_head_ckpt_path:
             print(f"Loading uncertainty head from {uncertainty_head_ckpt_path}...")
             state_dict = torch.load(uncertainty_head_ckpt_path, map_location='cpu')
-            missing_keys, _ = self.uncertainty_head.load_state_dict(state_dict, strict=True)
+            missing_keys, _ = self.uncertainty_head.load_state_dict(state_dict, strict=False) # strict=False because sem_proj might be new
             if len(missing_keys) > 0:
-                raise ValueError(f"Failed to load uncertainty_head weights. Missing: {missing_keys}")
+                print(f"Warning: Missing keys: {missing_keys}")
 
         
     @staticmethod
@@ -250,13 +390,25 @@ class DynaDA3(nn.Module):
         depth_np = prediction.depth
         depth_tensor = torch.from_numpy(depth_np).to(device=device, dtype=torch.float32).unsqueeze(1) # [N, H, W] -> [N, 1, H, W]
 
-        logits = self.uncertainty_head(  # [N,K,H,W]
-            feats, H, W, conf=conf_tensor, depth=depth_tensor
+        # returns can be tuple if return_refined=True
+        res = self.uncertainty_head(  # [N,K,H,W]
+            feats, H, W, conf=conf_tensor, depth=depth_tensor, return_refined=True
         )
-        mask = torch.argmax(logits, dim=1) # [N,H,W]
+        
+        if isinstance(res, tuple):
+            logits, refined_mask, semantic_mask = res
+            
+            # Use refined logits/mask if available
+            prediction.uncertainty_seg_logits = logits
+            prediction.uncertainty_seg_mask = refined_mask # Use refined mask
+            prediction.semantic_seg_mask = semantic_mask
+            prediction.raw_uncertainty_mask = torch.argmax(logits, dim=1)
+        else:
+            logits = res
+            mask = torch.argmax(logits, dim=1) # [N,H,W]
 
-        prediction.uncertainty_seg_logits = logits
-        prediction.uncertainty_seg_mask = mask
+            prediction.uncertainty_seg_logits = logits
+            prediction.uncertainty_seg_mask = mask
 
     @torch.no_grad()
     def inference(self, image, **kwargs):
