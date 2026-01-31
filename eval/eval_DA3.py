@@ -9,17 +9,17 @@ import matplotlib.pyplot as plt
 
 
 # ================= 配置区域 =================
-output_folder = "../output"
+output_folder = "../../output"
 os.makedirs(output_folder, exist_ok=True)
 
-model_path = "../checkpoint/DA3-GIANT-1.1"
+model_path = "../../checkpoint/DA3-GIANT-1.1"
 
 image_paths = [
-    "../dataset/2077/2077_scene1/000005.jpg",
-    "../dataset/2077/2077_scene1/000006.jpg",
-    "../dataset/2077/2077_scene1/000007.jpg",
-    "../dataset/2077/2077_scene1/000008.jpg",
-    "../dataset/2077/2077_scene1/000009.jpg",
+    "../../dataset/2077/2077_scene1/000005.jpg",
+    "../../dataset/2077/2077_scene1/000006.jpg",
+    "../../dataset/2077/2077_scene1/000007.jpg",
+    "../../dataset/2077/2077_scene1/000008.jpg",
+    "../../dataset/2077/2077_scene1/000009.jpg",
 ]
 
 export_feat_layers = [3, 7, 11, 15, 19, 23]

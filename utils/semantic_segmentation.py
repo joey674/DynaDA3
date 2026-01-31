@@ -110,10 +110,10 @@ EXAMPLE_IMAGE_URL = "https://dl.fbaipublicfiles.com/dinov2/images/example.jpg"
 
 image = load_image_from_url(EXAMPLE_IMAGE_URL)
 
-# ########################################
+########################################
 # run segmentation
 import numpy as np
-import time
+
 import dinov2.eval.segmentation.utils.colormaps as colormaps
 
 DATASET_COLORMAPS = {
@@ -127,17 +127,15 @@ def render_segmentation(segmentation_logits, dataset):
     segmentation_values = colormap_array[segmentation_logits + 1]
     return Image.fromarray(segmentation_values)
 
-start_time = time.time()
 array = np.array(image)[:, :, ::-1] # BGR
 segmentation_logits = inference_segmentor(model, array)[0]
 segmented_image = render_segmentation(segmentation_logits, HEAD_DATASET)
-end_time = time.time()
-print(f"Segmentation took {end_time - start_time:.2f} seconds")
-segmented_image.save("semantic/segmented.png")
-print("saved semantic/segmented.png")
+segmented_image.save("../output/segmented.png")
+print("saved ../output/segmented.png")
 
 ########################################
 # import dinov2.eval.segmentation_m2f.models.segmentors
+# import numpy as np
 # CONFIG_URL = f"{DINOV2_BASE_URL}/dinov2_vitg14/dinov2_vitg14_ade20k_m2f_config.py"
 # CHECKPOINT_URL = f"{DINOV2_BASE_URL}/dinov2_vitg14/dinov2_vitg14_ade20k_m2f.pth"
 
@@ -150,6 +148,7 @@ print("saved semantic/segmented.png")
 # model.eval()
 
 # ########################################
+# import time
 # start_time = time.time()
 
 # array = np.array(image)[:, :, ::-1] # BGR

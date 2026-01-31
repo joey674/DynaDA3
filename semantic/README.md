@@ -1,14 +1,15 @@
 conda deactivate 
-conda remove -n dinov2 -y --all
+conda remove -n seg -y --all
 
-conda create -n dinov2 python=3.10 -y
-conda activate dinov2
+conda create -n seg python=3.10 -y
+conda activate seg
 
-python -m pip install "numpy<2" pillow
+<!-- python -m pip install "numpy<2" pillow -->
 python -m pip install --extra-index-url https://download.pytorch.org/whl/cu117 \
   torch==2.0.0+cu117 torchvision==0.15.0+cu117
 
 python -m pip install addict pyyaml yapf packaging opencv-python
+
 python -m pip install --no-cache-dir --no-deps --no-index \
   -f https://download.openmmlab.com/mmcv/dist/cu117/torch2.0/index.html \
   mmcv-full==1.7.2
@@ -27,3 +28,5 @@ print("torchvision", torchvision.__version__)
 print("mmcv", mmcv.__version__)
 print("mmseg", mmseg.__version__)
 PY
+
+python semantic/semantic_segmentation.py 
