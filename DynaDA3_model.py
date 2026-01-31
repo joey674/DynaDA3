@@ -120,12 +120,12 @@ class UncertaintyDPT(nn.Module):
             conf: 置信度图 Tensor, shape: [N, 1, H, W] (假设值越高越置信，或通过 norm 自适应)
             depth: 深度图 Tensor, shape: [N, 1, H, W] (假设值越小越近，或通过 norm 自适应)
         """
-        # 1. 鲁棒归一化处理
-        # 无论原始 conf 范围是 [0,1] 还是 [1, inf)，归一化后 0=相对低值, 1=相对高值
+        # 鲁棒归一化处理
+        # 无论原始范围 归一化后到[0,1] 0=相对低值, 1=相对高值
         conf_norm = self.robust_normalize(conf)   
         depth_norm = self.robust_normalize(depth) 
 
-        # 2. 构造先验特征
+        # 构造先验特征
         # 假设:
         # depth_norm 接近 0 -> 浅/近 (Shallow)
         # conf_norm 接近 0 -> 低置信度 (Low Confidence)
@@ -139,34 +139,31 @@ class UncertaintyDPT(nn.Module):
         grad_y = torch.abs(depth_norm[:, :, 1:, :] - depth_norm[:, :, :-1, :])
         depth_grad = F.pad(grad_x, (0, 1, 0, 0)) + F.pad(grad_y, (0, 0, 0, 1))
 
-        # 3. 几何分支特征提取
+        # 融合深度和深度置信度
         geo_input = torch.cat(
             [depth_norm, conf_norm, depth_grad, uncertainty_prior, (1.0 - conf_norm)], dim=1
         )  # [N, 5, H, W]
         geo_feat = self.geo_head(geo_input)  # [N, c_embed, H, W]
 
-        # 4. 图像特征分支处理 (融合 Backbone 特征)
-        img_feat_total = 0
-        if feats is not None and len(feats) == len(self.projects_layer):
-             for i, feat in enumerate(feats):
-                # [N, c_in, h, w] -> [N, c_embed, h, w]
-                proj = self.projects_layer[i](feat)
-                # 上采样到 [N, c_embed, H, W]
-                upsampled = F.interpolate(proj, size=(H, W), mode="bilinear", align_corners=False)
-                img_feat_total = img_feat_total + upsampled
-        
-        # 如果没有特征传入，就用全0或者只用geo_feat (此处相加处理)
-        # 融合: Geo + Image
-        # 我们这里选择 concat 然后过卷积融合，这样网络可以学习权重
-        if isinstance(img_feat_total, int): # feats is empty
-             img_feat_total = torch.zeros_like(geo_feat)
+        # 融合 Backbone 特征
+        img_feat_sum = None
+        for i, feat in enumerate(feats):
+            # [N, c_in, h, w] -> [N, c_embed, h, w]
+            proj = self.projects_layer[i](feat)
+            if img_feat_sum is None:
+                img_feat_sum = proj
+            else:
+                img_feat_sum = img_feat_sum + proj
+
+        # 只进行一次上采样 [N, c_embed, H, W]
+        img_feat_total = F.interpolate(img_feat_sum, size=(H, W), mode="bilinear", align_corners=False)
              
         fused = torch.cat([geo_feat, img_feat_total], dim=1) # [N, 2*c_embed, H, W]
         fused = self.fusion_layer(fused)                     # [N, c_embed, H, W]
 
         # 5. 输出
         logits = self.output_layer(fused) 
-        # 确保输出分辨率正确 (虽然前面已经是对齐的，这里保险)
+        # 确保输出分辨率正确
         if logits.shape[-2:] != (H, W):
             logits = F.interpolate(logits, size=(H, W), mode="bilinear", align_corners=False)
             
@@ -269,7 +266,8 @@ class DynaDA3(nn.Module):
         Returns:
             prediction: DepthAnything3.Prediction  包含 uncertainty_seg_logits / uncertainty_seg_mask
         """
-
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         t0 = time.time()
 
         device = next(self.uncertainty_head.parameters()).device
@@ -278,12 +276,16 @@ class DynaDA3(nn.Module):
             image=image,
             export_feat_layers=self.export_feat_layers,
         )
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         t1 = time.time()
 
         self._run_uncertainty_head(output, device)
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         t2 = time.time()
 
-        logger.info(f"DynaDA3 Model Forward Pass Done. Total: {t2-t0:.3f}s | Backbone: {t1-t0:.3f}s | Uncertainty Head: {t2-t1:.3f}s")
+        logger.info(f"DynaDA3 Inference | Total: {t2-t0:.3f}s | Backbone: {t1-t0:.3f}s | Uncertainty Head: {t2-t1:.3f}s")
 
         return output
 
