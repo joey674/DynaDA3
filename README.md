@@ -2,6 +2,9 @@
 
 ## File Struct
 checkpoint
+  DA3-LARGE-1.1
+  DynaDA3-LARGE-1.1
+    semantic_vits
 dataset
 dataset_dynada3_train
 log
@@ -51,7 +54,7 @@ print("torchvision", torchvision.__version__)
 print("mmcv", mmcv.__version__)
 print("mmseg", mmseg.__version__)
 PY
-python semantic/semantic_segmentation.py
+python src/semantic/semantic_dinov2.py
 python DynaDA3_eval.py
 ```
 
@@ -77,7 +80,7 @@ git branch --set-upstream-to=origin/V3-Depth-Conf V3-Depth-Conf
 ```
 
 ## dataset
-### SAM3 for dataset:
+### SAM3 for uncertainty prediction dataset:
 ```bash
 conda create -n sam3 python=3.12
 conda deactivate
@@ -91,4 +94,6 @@ python SAM3_eval.py
 ### dataset wildgs-slam
 git clone https://huggingface.co/datasets/gradient-spaces/Wild-SLAM
 ```
+
+### C3VD
 

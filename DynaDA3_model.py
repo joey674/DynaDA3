@@ -74,7 +74,7 @@ class UncertaintyDPT(nn.Module):
             nn.ReLU(inplace=True),
         )
         
-        # 融合深度/置信度特征和图像特征
+        # 融合深度/置信度特征和图像特征融合
         self.fusion_layer = nn.Sequential(
             nn.Conv2d(c_embed * 2, c_embed, kernel_size=3, padding=1),
             nn.BatchNorm2d(c_embed),

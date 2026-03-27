@@ -12,17 +12,7 @@ from depth_anything_3.utils.visualize import visualize_depth
 
 # ================= config =================
 DATASETS = {
-    "UKA": [
-        "../dataset/UKA/UKA_Case1Part1_cropped/000319.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000320.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000321.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000322.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000323.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000324.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000325.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000326.jpg",
-    ],
-    "2077_scene1": [
+        "2077_scene1": [
         "../dataset/2077/2077_scene1/000005.jpg",
         "../dataset/2077/2077_scene1/000006.jpg",
         "../dataset/2077/2077_scene1/000007.jpg",
@@ -64,7 +54,17 @@ DATASETS = {
         "../dataset/wildgs-slam/wildgs_tower_test/frame_01070.png",
         "../dataset/wildgs-slam/wildgs_tower_test/frame_01080.png",
         "../dataset/wildgs-slam/wildgs_tower_test/frame_01090.png",
-    ]
+    ],
+        "UKA": [
+        "../dataset/UKA/UKA_Case1Part1_cropped/000319.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000320.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000321.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000322.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000323.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000324.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000325.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000326.jpg",
+    ],
 }
 
 SAVE_PATH = "../output"

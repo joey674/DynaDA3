@@ -19,8 +19,11 @@ import dinov2_seg.models
 
 ########################################
 CHECKPOINT_DIR = "../checkpoint/DynaDA3-LARGE-1.1/semantic_vits/"
-image_path = "../dataset/2077/2077_scene1/000008.jpg"
 output_dir = "../output"
+########################################
+# image_path = "../dataset/2077/2077_scene1/000008.jpg"
+# image_path = "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00605.png"
+image_path = "../dataset/UKA/UKA_Case1Part1_cropped/000322.jpg"
 #######################################
 # 由于输出的语义分割图大小需要是patch size(14)的整数倍，因此需要在输入图像上进行中心填充
 class CenterPadding(torch.nn.Module):
