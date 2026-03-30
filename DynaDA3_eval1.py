@@ -1,3 +1,8 @@
+#################
+# DynaDA3 Evaluation Script
+# DynaDA3_eval1.py 是“逐项导出”脚本。它不画 confidence，而是把每帧的 rgb/ depth/ uncertainty_mask 分别存到子目录里，并且如果模型输出了 extrinsics，还会额外画一张 3D 相机轨迹图
+#################
+
 import os
 import torch
 import matplotlib.pyplot as plt
@@ -66,7 +71,7 @@ DATASETS = {
     ],
 }
 
-SAVE_PATH = "../output"
+SAVE_PATH = "/outputs"
 ckpt_path = "../checkpoint/DynaDA3-LARGE-1.1/uncertainty_head.pth"
 # ===========================================
 

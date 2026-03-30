@@ -1,3 +1,7 @@
+#################
+# DynaDA3 Evaluation Script
+# DynaDA3_eval.py 是“总览图”脚本。它对每个数据集跑一次推理后，把 RGB / depth / confidence / uncertainty mask 拼成一张大图保存，重点是看定性效果和置信度分布
+#################
 import os
 import torch
 import matplotlib.pyplot as plt
@@ -67,7 +71,7 @@ DATASETS = {
     ],
 }
 
-SAVE_PATH = "../output"
+SAVE_PATH = "/outputs"
 ckpt_path = "../checkpoint/DynaDA3-LARGE-1.1/uncertainty_head.pth"
 # ===========================================
 

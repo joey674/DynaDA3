@@ -1,4 +1,5 @@
 from pyexpat import features
+import os
 import numpy as np
 import torch
 import torch.nn as nn
@@ -12,8 +13,10 @@ DA3_VITG_CHANNELS = 1536
 DA3_VITL_CHANNELS = 1024
 DA3_VITG_FEAT_LAYERS=(21, 27, 33, 39)
 DA3_VITL_FEAT_LAYERS=(11, 15, 19, 23)
-DA3_VITG_CKPT_PATH = "../checkpoint/DA3-GIANT-1.1"
-DA3_VITL_CKPT_PATH = "../checkpoint/DA3-LARGE-1.1"
+_THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+_CHECKPOINT_DIR = os.path.abspath(os.path.join(_THIS_DIR, "..", "checkpoint"))
+DA3_VITG_CKPT_PATH = os.path.join(_CHECKPOINT_DIR, "DA3-GIANT-1.1")
+DA3_VITL_CKPT_PATH = os.path.join(_CHECKPOINT_DIR, "DA3-LARGE-1.1")
 DPT_EMBED_DIM = 2048
 
 MODEL_CONFIGS = {
@@ -220,7 +223,7 @@ class DynaDA3(nn.Module):
         )
 
         if uncertainty_head_ckpt_path:
-            print(f"Loading uncertainty head from {uncertainty_head_ckpt_path}...")
+            logger.info(f"Loading uncertainty head from {uncertainty_head_ckpt_path}...")
             state_dict = torch.load(uncertainty_head_ckpt_path, map_location='cpu')
             missing_keys, _ = self.uncertainty_head.load_state_dict(state_dict, strict=True)
             if len(missing_keys) > 0:
@@ -291,6 +294,7 @@ class DynaDA3(nn.Module):
         output = self.da3.inference(
             image=image,
             export_feat_layers=self.export_feat_idxs,
+            **kwargs,
         )
         if torch.cuda.is_available():
             torch.cuda.synchronize()

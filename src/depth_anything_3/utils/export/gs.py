@@ -14,8 +14,12 @@
 
 import os
 from typing import Literal, Optional
-import moviepy.editor as mpy
 import torch
+
+try:
+    import moviepy.editor as mpy
+except ModuleNotFoundError:
+    import moviepy as mpy
 
 from depth_anything_3.model.utils.gs_renderer import run_renderer_in_chunk_w_trj_mode
 from depth_anything_3.specs import Prediction
