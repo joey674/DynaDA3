@@ -1,3 +1,7 @@
+#################
+# DynaDA3 Evaluation Script
+# DynaDA3_eval.py 是“总览图”脚本。它对每个数据集跑一次推理后，把 RGB / depth / confidence / uncertainty mask 拼成一张大图保存，重点是看定性效果和置信度分布
+#################
 import os
 import torch
 import matplotlib.pyplot as plt
@@ -12,17 +16,7 @@ from depth_anything_3.utils.visualize import visualize_depth
 
 # ================= config =================
 DATASETS = {
-    "UKA": [
-        "../dataset/UKA/UKA_Case1Part1_cropped/000319.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000320.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000321.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000322.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000323.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000324.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000325.jpg",
-        "../dataset/UKA/UKA_Case1Part1_cropped/000326.jpg",
-    ],
-    "2077_scene1": [
+        "2077_scene1": [
         "../dataset/2077/2077_scene1/000005.jpg",
         "../dataset/2077/2077_scene1/000006.jpg",
         "../dataset/2077/2077_scene1/000007.jpg",
@@ -33,41 +27,51 @@ DATASETS = {
         "../dataset/2077/2077_scene1/000012.jpg", 
         "../dataset/2077/2077_scene1/000013.jpg", 
     ],
-#     "wildgs_anymal": [ 
-#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00601.png",
-#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00606.png",
-#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00611.png",
-#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00616.png",
-#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00621.png",
-#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00626.png",
-#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00631.png",
-#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00636.png",
-#         "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00641.png",
-#     ],
-#     "wildgs_racket": [ 
-#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00830.png",
-#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00840.png",
-#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00850.png",
-#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00860.png",
-#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00870.png",
-#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00880.png",
-#         "../dataset/wildgs-slam/wildgs_racket_test/frame_00890.png",
-#     ],
-#     "wildgs_tower": [ 
-#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01000.png",
-#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01010.png",
-#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01020.png",
-#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01030.png",
-#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01040.png",
-#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01050.png",
-#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01060.png",
-#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01070.png",
-#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01080.png",
-#         "../dataset/wildgs-slam/wildgs_tower_test/frame_01090.png",
-#     ]
+    "wildgs_anymal": [ 
+        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00601.png",
+        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00606.png",
+        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00611.png",
+        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00616.png",
+        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00621.png",
+        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00626.png",
+        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00631.png",
+        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00636.png",
+        "../dataset/wildgs-slam/wildgs_ANYmal_test/frame_00641.png",
+    ],
+    "wildgs_racket": [ 
+        "../dataset/wildgs-slam/wildgs_racket_test/frame_00830.png",
+        "../dataset/wildgs-slam/wildgs_racket_test/frame_00840.png",
+        "../dataset/wildgs-slam/wildgs_racket_test/frame_00850.png",
+        "../dataset/wildgs-slam/wildgs_racket_test/frame_00860.png",
+        "../dataset/wildgs-slam/wildgs_racket_test/frame_00870.png",
+        "../dataset/wildgs-slam/wildgs_racket_test/frame_00880.png",
+        "../dataset/wildgs-slam/wildgs_racket_test/frame_00890.png",
+    ],
+    "wildgs_tower": [ 
+        "../dataset/wildgs-slam/wildgs_tower_test/frame_01000.png",
+        "../dataset/wildgs-slam/wildgs_tower_test/frame_01010.png",
+        "../dataset/wildgs-slam/wildgs_tower_test/frame_01020.png",
+        "../dataset/wildgs-slam/wildgs_tower_test/frame_01030.png",
+        "../dataset/wildgs-slam/wildgs_tower_test/frame_01040.png",
+        "../dataset/wildgs-slam/wildgs_tower_test/frame_01050.png",
+        "../dataset/wildgs-slam/wildgs_tower_test/frame_01060.png",
+        "../dataset/wildgs-slam/wildgs_tower_test/frame_01070.png",
+        "../dataset/wildgs-slam/wildgs_tower_test/frame_01080.png",
+        "../dataset/wildgs-slam/wildgs_tower_test/frame_01090.png",
+    ],
+        "UKA": [
+        "../dataset/UKA/UKA_Case1Part1_cropped/000319.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000320.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000321.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000322.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000323.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000324.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000325.jpg",
+        "../dataset/UKA/UKA_Case1Part1_cropped/000326.jpg",
+    ],
 }
 
-SAVE_PATH = "../output"
+SAVE_PATH = "/outputs"
 ckpt_path = "../checkpoint/DynaDA3-LARGE-1.1/uncertainty_head.pth"
 # ===========================================
 
@@ -186,9 +190,16 @@ def main():
 
     # 加载模型
     print("Loading model...")
+    
+    if not os.path.exists(ckpt_path):
+        print(f"Checkpoint not found at {ckpt_path}, loading with None.")
+        uncertainty_ckpt = None
+    else:
+        uncertainty_ckpt = ckpt_path
+
     model = DynaDA3(
         model_name='vitl', 
-        uncertainty_head_ckpt_path=ckpt_path
+        uncertainty_head_ckpt_path=uncertainty_ckpt
     ).to(device)
     
     # 遍历数据集

@@ -2,6 +2,9 @@
 
 ## File Struct
 checkpoint
+  DA3-LARGE-1.1
+  DynaDA3-LARGE-1.1
+    semantic_vits
 dataset
 dataset_dynada3_train
 log
@@ -51,7 +54,7 @@ print("torchvision", torchvision.__version__)
 print("mmcv", mmcv.__version__)
 print("mmseg", mmseg.__version__)
 PY
-python semantic/semantic_segmentation.py
+python src/semantic/semantic_dinov2.py
 python DynaDA3_eval.py
 ```
 
@@ -65,14 +68,19 @@ python DynaDA3_eval.py
 python ./semantic/semantic_segmentation.py
 ```
 
-## model checkpoint
+## model version
 当前uncertainty_head.pth是代码会调用的ckpt;
 这个uncertainty_head.pth是最新训练的ckpt版本的复制(比如是uncertainty_headv3_stable.pth)作为当前调用的对象
 当训练新的版本时, 请把model的版本和ckpt的版本对应上保存;
 模型就保存在utils里
+```bash
+git checkout -b V3-Depth-Conf
+git fetch
+git branch --set-upstream-to=origin/V3-Depth-Conf V3-Depth-Conf
+```
 
 ## dataset
-### SAM3 for dataset:
+### SAM3 for uncertainty prediction dataset:
 ```bash
 conda create -n sam3 python=3.12
 conda deactivate
@@ -86,4 +94,6 @@ python SAM3_eval.py
 ### dataset wildgs-slam
 git clone https://huggingface.co/datasets/gradient-spaces/Wild-SLAM
 ```
+
+### C3VD
 
