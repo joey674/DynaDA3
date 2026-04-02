@@ -29,7 +29,7 @@ CONFIG = {
         "../dataset_dynada3_train/wildgs_racket3",
         "../dataset_dynada3_train/wildgs_racket4",
     ],
-    "model_name": 'vitl', # 'vitl' or 'vitg'
+    "model_name": 'vitl', 
     "save_dir": "../checkpoint/DynaDA3-LARGE-1.1",
     "log_dir": "../log", 
     "seq_range": (5, 10),
